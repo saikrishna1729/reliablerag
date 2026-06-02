@@ -1,1 +1,5 @@
 .venv*/
+
+# Ignore raw/processed datasets
+data/raw
+data/processed
