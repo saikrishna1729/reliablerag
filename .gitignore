@@ -1,1 +1,26 @@
 .venv*/
+.venv
+
+.idea/
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data / vector store
+data/chroma_db/
+
+# macOS
+.DS_Store

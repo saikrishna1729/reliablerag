@@ -1,0 +1,26 @@
+[project]
+name = "reliablerag"
+version = "0.1.0"
+description = "A RAG framework with strict verification pipelines to reduce LLM hallucinations"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=1.3.4",
+    "langchain-ollama>=1.1.0",
+    "langchain-chroma>=1.1.0",
+    "langchain-core>=1.4.1",
+    "chromadb>=1.5.9,<2.0.0",
+    "python-dotenv>=1.2.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reliablerag"]
+
+[tool.uv]
+dev-dependencies = [
+    "ipykernel>=7.2.0",
+]
