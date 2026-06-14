@@ -1,5 +1,18 @@
-.venv*/
+# Environments
+.venv/
+__pycache__/
+*.pyc
+.env
 
-# Ignore raw/processed datasets
-data/raw
-data/processed
+# Data and models (live on Google Drive)
+data/raw/
+data/processed/
+chroma_db/
+
+# Eval outputs (live on Google Drive)
+eval/results/runs/*.csv
+!eval/results/runs/.gitkeep
+master_tracking.csv
+
+# OS
+.DS_Store
