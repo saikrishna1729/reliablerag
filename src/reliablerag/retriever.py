@@ -1,3 +1,5 @@
+import os
+
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -37,6 +39,37 @@ def load_vector_store(
         collection_name=collection_name,
         collection_metadata=collection_metadata or _DEFAULT_COLLECTION_METADATA,
     )
+
+
+def get_or_build_vector_store(
+    documents: list[Document],
+    embeddings: Embeddings,
+    persist_directory: str,
+    collection_name: str,
+    collection_metadata: dict | None = None,
+) -> tuple[Chroma, bool]:
+    """Load an existing persisted collection or build and persist a new one.
+
+    Returns (vector_store, cache_hit) so callers can log whether we skipped embedding.
+    The collection is considered cached if its subdirectory already exists on disk.
+    """
+    collection_dir = os.path.join(persist_directory, collection_name)
+    if os.path.isdir(collection_dir):
+        vs = load_vector_store(
+            embeddings,
+            persist_directory=persist_directory,
+            collection_name=collection_name,
+            collection_metadata=collection_metadata,
+        )
+        return vs, True
+    vs = build_vector_store(
+        documents,
+        embeddings,
+        persist_directory=persist_directory,
+        collection_name=collection_name,
+        collection_metadata=collection_metadata,
+    )
+    return vs, False
 
 
 def get_retriever(

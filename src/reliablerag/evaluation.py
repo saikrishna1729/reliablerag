@@ -4,9 +4,12 @@ from dataclasses import dataclass
 
 from langchain_core.documents import Document
 from langchain_core.exceptions import OutputParserException
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.output_parsers import JsonOutputParser
 
 _ANNOTATION_PROMPT = """\
+IMPORTANT: You must respond with a valid JSON object ONLY. The very first character of your response must be '{{' and the last must be '}}'. Do not write anything before or after the JSON. Do not wrap it in markdown fences or backticks.
+
 I asked someone to answer a question based on one or more documents.
 Your task is to review their response and assess whether or not each sentence
 in that response is supported by text in the documents. And if so, which
@@ -109,7 +112,17 @@ newlines, e.g. '\\n'. Do not write anything before or after the JSON string. Do 
 wrap the JSON string in backticks like ''' or '''json.
 As a reminder: your task is to review the response and assess which documents contain
 useful information pertaining to the question, and how each sentence in the response
-is supported by the text in the documents.\
+is supported by the text in the documents.
+REMINDER: Your entire response must be a single raw JSON object. First character: '{{'. Last character: '}}'. Nothing else.\
+"""
+
+_CORRECTIVE_RETRY_MSG = """\
+Your previous response was not valid JSON. Here is what you returned:
+
+{bad_output}
+
+Return ONLY the raw JSON object — first character must be '{{', last must be '}}'. \
+No markdown fences, no explanation, no text before or after the JSON.\
 """
 
 
@@ -215,8 +228,26 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
         answer=labeled_response,
     )
 
+    parser = JsonOutputParser()
+
+    # First attempt.
+    raw = llm.invoke(prompt)
     try:
-        annotation = (llm | JsonOutputParser()).invoke(prompt)
+        annotation = parser.parse(raw.content)
+        return _compute_scores(annotation, context_sentences)
+    except OutputParserException:
+        pass
+
+    # Corrective retry — show the model its bad output and ask it to fix it.
+    retry_messages = [
+        HumanMessage(content=prompt),
+        AIMessage(content=raw.content),
+        HumanMessage(content=_CORRECTIVE_RETRY_MSG.format(bad_output=raw.content[:500])),
+    ]
+    raw2 = llm.invoke(retry_messages)
+    try:
+        annotation = parser.parse(raw2.content)
+        return _compute_scores(annotation, context_sentences)
     except OutputParserException as e:
         return TRACeScores(
             adherence=False,
@@ -227,25 +258,35 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
             relevance_explanation="",
         )
 
-    return _compute_scores(annotation, context_sentences)
+
+def _is_parse_error(run: TRACeScores) -> bool:
+    return run.adherence_explanation.startswith("parse error")
 
 
 def evaluate(llm, question: str, chunks: list[Document], response: str, n_runs: int = 1) -> TRACeScores:
     """
     LLM-as-judge TRACe scoring. With n_runs > 1, calls the judge n times and averages
     numeric scores (majority vote for adherence) to reduce judge variance.
+    Parse-error runs are excluded from the average — a failed run is not a measurement.
+    If all runs fail, returns the last error sentinel.
     Use a deterministic judge LLM (temperature=0) for best results.
     """
     if n_runs <= 1:
         return _evaluate_once(llm, question, chunks, response)
 
-    runs = [_evaluate_once(llm, question, chunks, response) for _ in range(n_runs)]
+    all_runs = [_evaluate_once(llm, question, chunks, response) for _ in range(n_runs)]
+    good = [r for r in all_runs if not _is_parse_error(r)]
+
+    if not good:
+        return all_runs[-1]
+
+    n = len(good)
     return TRACeScores(
-        adherence=sum(r.adherence for r in runs) * 2 > n_runs,  # strict majority
-        relevance=sum(r.relevance for r in runs) / n_runs,
-        utilization=sum(r.utilization for r in runs) / n_runs,
-        completeness=sum(r.completeness for r in runs) / n_runs,
-        adherence_explanation=runs[-1].adherence_explanation,
-        relevance_explanation=runs[-1].relevance_explanation,
-        annotation={"runs": [r.annotation for r in runs]},
+        adherence=sum(r.adherence for r in good) * 2 > n,  # strict majority over successful runs only
+        relevance=sum(r.relevance for r in good) / n,
+        utilization=sum(r.utilization for r in good) / n,
+        completeness=sum(r.completeness for r in good) / n,
+        adherence_explanation=good[-1].adherence_explanation,
+        relevance_explanation=good[-1].relevance_explanation,
+        annotation={"runs": [r.annotation for r in good]},
     )
