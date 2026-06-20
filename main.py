@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import time
 from config import ExperimentConfig, ProfileType, EmbedderType, GeneratorType, EvaluatorType
 from experiments.experiment_runner import run_experiment
 
@@ -101,10 +102,23 @@ def main():
         action="store_true",
         help="Run batch sweep across chunkers, embedders, and retrievers"
     )
+    parser.add_argument(
+        "--run_id_prefix",
+        default=None,
+        help="Custom run ID prefix to group runs under (default: YYYYMMDD_HHMM_username_dataset)"
+    )
 
     args = parser.parse_args()
 
+    # Determine run_id_prefix once before starting any runs
+    if args.run_id_prefix:
+        run_id_prefix = args.run_id_prefix
+    else:
+        timestamp_str = time.strftime("%Y%m%d_%H%M")
+        run_id_prefix = f"{timestamp_str}_{args.username}_{args.dataset}"
+
     # Determine sweep configurations
+    latest_run_ids = []
     if args.sweep:
         print("Starting batch sweep mode...")
         chunkers = ["recursive", "semantic"]
@@ -139,10 +153,14 @@ def main():
                         chunk_size=args.chunk_size,
                         chunk_overlap=args.chunk_overlap,
                         retriever=retriever,
-                        top_k=args.top_k
+                        top_k=args.top_k,
+                        run_id_prefix=run_id_prefix
                     )
                     try:
-                        run_experiment(config)
+                        detailed_filename = run_experiment(config)
+                        # Extract run_id from filename (remove .csv extension)
+                        run_id = os.path.splitext(detailed_filename)[0]
+                        latest_run_ids.append(run_id)
                     except Exception as e:
                         print(f"Sweep run failed for config {config}: {e}")
                         
@@ -161,9 +179,25 @@ def main():
             chunk_size=args.chunk_size,
             chunk_overlap=args.chunk_overlap,
             retriever=args.retriever,
-            top_k=args.top_k
+            top_k=args.top_k,
+            run_id_prefix=run_id_prefix
         )
-        run_experiment(config)
+        try:
+            detailed_filename = run_experiment(config)
+            run_id = os.path.splitext(detailed_filename)[0]
+            latest_run_ids.append(run_id)
+        except Exception as e:
+            print(f"Run failed: {e}")
+
+    # Write latest run IDs to a marker file
+    if latest_run_ids:
+        try:
+            os.makedirs("eval", exist_ok=True)
+            with open("eval/latest_run.txt", "w") as f:
+                f.write("\n".join(latest_run_ids))
+            print(f"\nSaved {len(latest_run_ids)} executed run IDs to eval/latest_run.txt for tracking.")
+        except Exception as e:
+            print(f"Warning: Failed to save latest run IDs to marker file: {e}")
 
 if __name__ == "__main__":
     main()

@@ -21,22 +21,23 @@ def log_experiment_run(
     # 1. Create directory if not exists
     os.makedirs(EVAL_DIR, exist_ok=True)
     
-    # 2. Save detailed run CSV
-    detailed_filename = (
-        f"{timestamp_str}_{config.username}_{config.dataset}_"
-        f"{config.chunker}_{config.embedder}_{config.retriever}.csv"
-    )
+    # 2. Determine run_id from first run row or construct fallback
+    if run_rows and "run_id" in run_rows[0]:
+        run_id = run_rows[0]["run_id"]
+    else:
+        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M")
+        run_id = (
+            f"{timestamp_str}_{config.username}_{config.dataset}_"
+            f"{config.chunker}_{config.embedder}_{config.retriever}"
+        )
+        
+    # 3. Save detailed run CSV
+    detailed_filename = f"{run_id}.csv"
     detailed_path = EVAL_DIR / detailed_filename
     
     detailed_df = pd.DataFrame(run_rows)
     detailed_df.to_csv(detailed_path, index=False)
     print(f"Detailed run logged to {detailed_path}")
-    
-    # 3. Create run_id
-    run_id = (
-        f"{timestamp_str}_{config.username}_{config.dataset}_"
-        f"{config.chunker}_{config.embedder}_{config.retriever}"
-    )
     
     # 4. Append to master_tracking.csv
     master_path = BASE_DIR / "master_tracking.csv"

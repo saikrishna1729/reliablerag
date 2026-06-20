@@ -1,5 +1,9 @@
 from dataclasses import dataclass, field
-from typing import Literal, Optional, Dict
+from typing import Optional, Dict
+try:
+    from typing import Literal
+except ImportError:
+    from typing_extensions import Literal
 from pathlib import Path
 
 # ── Paths ──────────────────────────────────────────────────────────────────
@@ -59,6 +63,9 @@ class ExperimentConfig:
     # Retrieval params
     retriever: Literal["dense", "sparse", "hybrid"] = "hybrid"
     top_k:     int = 5
+
+    # Unique prefix for run session / sweep grouping
+    run_id_prefix: Optional[str] = None
 
     def __post_init__(self):
         defaults = PROFILES[self.profile]

@@ -109,8 +109,11 @@ def run_experiment(config: ExperimentConfig) -> str:
     print("Running inference and evaluation loop...")
     run_rows = []
     
-    timestamp_str = datetime_str = time.strftime("%Y%m%d_%H%M")
-    run_id = f"{timestamp_str}_{config.username}_{config.dataset}_{config.chunker}_{config.embedder}_{config.retriever}"
+    if config.run_id_prefix:
+        run_id = f"{config.run_id_prefix}_{config.chunker}_{config.embedder}_{config.retriever}"
+    else:
+        timestamp_str = time.strftime("%Y%m%d_%H%M")
+        run_id = f"{timestamp_str}_{config.username}_{config.dataset}_{config.chunker}_{config.embedder}_{config.retriever}"
 
     for idx, row in df.iterrows():
         question = row["question"]
