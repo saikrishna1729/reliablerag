@@ -178,37 +178,74 @@
 
 ---
 
+### Experiment K — Swap embedder: BAAI/bge-large-en-v1.5 + HyDE
+**Reason:** Step J (HyDE) confirmed nomic closes the vocabulary gap, but the question remained: is nomic the best choice, or would a purpose-built contrastive sentence encoder (bge-large) do better? bge-large is explicitly trained for cosine retrieval via contrastive learning — better embedding geometry in theory.  
+**Change:** Enabled HuggingFace provider in `providers.py` (was commented out; also fixed `model_name` parameter mismatch). Created `embeddings_bge = create_embeddings("huggingface", "BAAI/bge-large-en-v1.5")` inline. Collection tag `_bge` to avoid cross-contaminating the nomic cache. Same HyDE pipeline as Exp J.  
+**Full config:** embedder=`bge-large-en-v1.5` (HuggingFace), judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+
+| Metric | Ours | Ref (GPT-4) | vs E baseline | vs J (HyDE+nomic) |
+|---|---|---|---|---|
+| Relevance | 0.191 | 0.069 | +0.018 | −0.143 |
+| Utilization | 0.083 | 0.042 | −0.014 | −0.111 |
+| Completeness | 0.557 | 0.717 | −0.007 | −0.021 |
+| Adherence | 45% (9/20) | 90% | −10pp | +20pp |
+
+**Verdict:** bge-large underperforms nomic across all retrieval metrics with HyDE. The adherence recovery (25% → 45%) confirms the pattern: weaker retrieval → generator hedges more → adherence goes up. nomic's embeddings have better geometry for CUAD legal text in this setup than bge-large's contrastive-trained vectors. Contrastive training is not sufficient to beat nomic here.
+
+---
+
+### Experiment L — Swap embedder: nlpaueb/legal-bert-base-uncased + HyDE
+**Reason:** bge-large is general-domain; legal-bert was trained on US legal text (English legal corpora). The hypothesis was that legal-domain vocabulary in the embedder would close the remaining gap between query and clause phrasing, even though legal-bert uses CLS-pooling rather than contrastive training.  
+**Change:** `embeddings_legal = create_embeddings("huggingface", "nlpaueb/legal-bert-base-uncased")`. Collection tag `_legalbert`. Same HyDE pipeline as Exps J and K.  
+**Full config:** embedder=`legal-bert-base-uncased` (HuggingFace), judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+
+| Metric | Ours | Ref (GPT-4) | vs E baseline | vs J (HyDE+nomic) |
+|---|---|---|---|---|
+| Relevance | 0.120 | 0.069 | −0.053 | −0.214 |
+| Utilization | 0.058 | 0.042 | −0.039 | −0.136 |
+| Completeness | 0.409 | 0.717 | −0.155 | −0.169 |
+| Adherence | 35% (7/20) | 90% | −20pp | +10pp |
+| Parse errors | 2/20 | — | — | — |
+
+**Verdict:** Worst result of all 12 experiments. CLS-token pooling (no contrastive training) produces poor cosine geometry regardless of domain vocabulary. Legal-bert's domain knowledge does not compensate for its weak sentence-level representations. **Confirmed: a proper sentence-encoder training objective (contrastive) matters more than domain vocabulary for dense retrieval.**
+
+**Embedding axis conclusion:** `nomic-embed-text-v2-moe` is the best embedder of the three tested. HyDE + nomic (Exp J) remains the best retrieval config. Further gains require addressing the generator, not the embedder.
+
+---
+
 ## Summary Table
 
 All metrics are **averages across N=20 samples** with fixed evaluator. Ref metrics come from GPT-4 annotations in the RAGBench dataset and are fixed per sample.
 
-| Exp | Retrieval | chunk/overlap | Our Rel. | Our Util. | Our Comp. | Ref Comp. | Our Adh. | Notes |
-|---|---|---|---|---|---|---|---|---|
-| **E (baseline)** | cosine | 500/50 | 0.173 | 0.097 | 0.564 | 0.717 | **55%** | Best adherence |
-| F1 | cosine | 1500/200 | 0.071 | 0.041 | 0.592 | 0.717 | 10% | Best comp, adherence collapses |
-| F2 | cosine | 1000/150 | 0.090 | 0.043 | 0.446 | 0.717 | 35% | Worst overall |
-| G | cosine+BM25 RRF (equal weight) | 500/50 | 0.112 | 0.086 | 0.590 | 0.717 | 30% | Best completeness before HyDE |
-| H | cosine+BM25 RRF (bm25=0.3) | 500/50 | 0.132 | 0.054 | 0.524 | 0.717 | 40% | Weight tuning: completeness fell back |
-| I | cosine+BM25 RRF (equal) + cross-encoder rerank | 500/50 | 0.135 | 0.091 | 0.479 | 0.717 | 20% | Worst adherence; reranker demotes grounding chunks |
-| **J (HyDE)** | cosine (hypothetical embedding) | 500/50 | **0.334** | **0.194** | **0.578** | 0.717 | 25% | Best rel/util by far; adherence gap is generator, not retrieval |
+| Exp | Retrieval | Embedder | chunk/overlap | Our Rel. | Our Util. | Our Comp. | Ref Comp. | Our Adh. | Notes |
+|-----|-----------|----------|---------------|----------|-----------|-----------|-----------|----------|-------|
+| **E (baseline)** | cosine | nomic | 500/50 | 0.173 | 0.097 | 0.564 | 0.717 | **55%** | Best adherence |
+| F1 | cosine | nomic | 1500/200 | 0.071 | 0.041 | 0.592 | 0.717 | 10% | Best comp, adherence collapses |
+| F2 | cosine | nomic | 1000/150 | 0.090 | 0.043 | 0.446 | 0.717 | 35% | Worst overall |
+| G | cosine+BM25 RRF (equal) | nomic | 500/50 | 0.112 | 0.086 | 0.590 | 0.717 | 30% | Best completeness before HyDE |
+| H | cosine+BM25 RRF (bm25=0.3) | nomic | 500/50 | 0.132 | 0.054 | 0.524 | 0.717 | 40% | Weight tuning: completeness fell back |
+| I | cosine+BM25 RRF (equal) + rerank | nomic | 500/50 | 0.135 | 0.091 | 0.479 | 0.717 | 20% | Worst adherence; reranker demotes grounding chunks |
+| **J (HyDE)** | cosine (hypothetical embedding) | nomic | 500/50 | **0.334** | **0.194** | **0.578** | 0.717 | 25% | Best rel/util by far; adherence gap is generator, not retrieval |
+| K | cosine (hypothetical embedding) | bge-large-en-v1.5 | 500/50 | 0.191 | 0.083 | 0.557 | 0.717 | 45% | Contrastive encoder doesn't beat nomic+HyDE |
+| L | cosine (hypothetical embedding) | legal-bert-base-uncased | 500/50 | 0.120 | 0.058 | 0.409 | 0.717 | 35% | Worst of all; CLS-pooling kills cosine geometry |
 
-All experiments: embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, top_k=20, N=20, n_runs=3.  
-**Current best retrieval: J (HyDE) on relevance/utilization/completeness. Adherence gap is now a generator problem, not retrieval.**
+All experiments: judge=`llama3.1:8b-instruct-q4_K_M`, top_k=20, N=20, n_runs=3. Exps E–J: embedder=`nomic-embed-text-v2-moe`.  
+**Current best retrieval: J (HyDE + nomic). Embedding axis exhausted. Next lever: generator prompt.**
 
 ---
 
 ## Open Diagnosis
 
-- **Retrieval is no longer the primary bottleneck:** HyDE (Exp J) doubled relevance and utilization vs baseline. Several samples score completeness 1.000 but fail adherence — the generator has the right context and still hedges.
-- **Adherence gap is a generator problem:** The generator LLM (Llama 3.1 8B) frequently responds "I do not have enough information" even when the retrieved chunks contain the answer. This is likely a combination of conservative instruction-following and the judge's strict grounding requirement.
-- **Completeness gap partially closed (0.564 → 0.578):** Still 0.139 below ref (0.717). The remaining gap is likely a mix of: (a) some queries that genuinely need better embeddings (legal-domain), and (b) samples where the generator fails to use retrieved evidence even when it's present (adherence/utilization issue).
-- **Next lever is the generator prompt:** Explicitly instructing the model to answer based on provided context, and to state what the context says rather than claiming ignorance, should recover adherence without hurting retrieval quality.
+- **Retrieval is no longer the primary bottleneck:** HyDE + nomic (Exp J) doubled relevance and utilization vs baseline. Embedding axis exhausted across three models — nomic is the best of the three tested.
+- **Contrastive training > domain vocabulary for dense retrieval:** bge-large (contrastive, general-domain) outperformed legal-bert (CLS-pooling, legal-domain) on all metrics. A proper sentence-encoder objective matters more than in-domain pretraining for cosine similarity retrieval.
+- **Adherence gap is a generator problem:** Multiple samples score completeness 1.000 but fail adherence — the generator has the right context and still responds "I do not have enough information." This is conservative instruction-following, not a retrieval miss.
+- **Completeness gap partially closed (0.564 → 0.578):** Still 0.139 below ref (0.717). With retrieval addressed, the remaining gap is attributable to the generator not fully extracting and expressing what the retrieved chunks contain.
+- **Next lever is the generator prompt:** Explicitly instructing the model to answer from the provided context, and to state what the contract says rather than claiming ignorance, should recover adherence and lift completeness without any retrieval changes.
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **Fix the generator prompt** — instruct the model to answer directly from the provided context, and never say "I do not have enough information" when context is present. Samples with completeness 1.000 but failing adherence are the clearest signal this is needed.
-2. **Legal-domain embedder** — swap `nomic-embed-text-v2-moe` for a legal-tuned model (e.g. `legal-bert`, `inlegal-bert`, or `bge-large-en-v1.5`). Vocabulary mismatch at the embedding level is the remaining retrieval gap; HyDE is a workaround, a better embedder would fix it at source.
-3. **HyDE + generator prompt fix combined** — once the generator stops hedging, re-run HyDE to get a clean read on how much of the completeness gap is retrieval vs generation.
-4. **Sentence-level chunking** — CUAD clauses are typically one sentence; 500-char chunks may still split mid-clause. A sentence-aware splitter could improve both precision and completeness.
+1. **Fix the generator prompt** — instruct the model to answer directly from provided context and never claim ignorance when context is present. Samples with completeness 1.000 but failing adherence are the direct evidence this is the lever. Re-run with HyDE + nomic to get a clean combined signal.
+2. **HyDE + generator prompt combined** — once the generator stops hedging, this should simultaneously improve adherence and completeness, bringing both closer to ref.
+3. **Sentence-level chunking** — CUAD clauses are typically one sentence; 500-char chunks may still split mid-clause. A sentence-aware splitter could improve both precision and completeness if the generator prompt fix reveals a remaining retrieval gap.

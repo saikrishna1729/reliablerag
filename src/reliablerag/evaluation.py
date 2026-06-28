@@ -134,7 +134,7 @@ class TRACeScores:
     completeness: float
     adherence_explanation: str
     relevance_explanation: str
-    annotation: dict | None = None
+    parsed_llm_response: dict | None = None
 
 
 def _split_sentences(text: str) -> list[str]:
@@ -185,25 +185,25 @@ def _token_len(s: str) -> int:
     return len(s.split())
 
 
-def _compute_scores(annotation: dict, context_sentences: dict[str, str]) -> TRACeScores:
+def _compute_scores(parsed_llm_response: dict, chunk_sentence_map: dict[str, str]) -> TRACeScores:
     """Compute all four TRACe scores from GPT-4-style span annotations using length-ratio formulas."""
-    total_len = sum(_token_len(s) for s in context_sentences.values())
+    total_tokens_in_all_chunks = sum(_token_len(s) for s in chunk_sentence_map.values())
 
-    relevant_keys = set(annotation.get("all_relevant_sentence_keys", []))
-    utilized_keys = set(annotation.get("all_utilized_sentence_keys", []))
+    relevant_keys = set(parsed_llm_response.get("all_relevant_sentence_keys", []))
+    utilized_keys = set(parsed_llm_response.get("all_utilized_sentence_keys", []))
 
-    relevant_len = sum(_token_len(context_sentences[k]) for k in relevant_keys if k in context_sentences)
-    utilized_len = sum(_token_len(context_sentences[k]) for k in utilized_keys if k in context_sentences)
-    overlap_len = sum(_token_len(context_sentences[k]) for k in relevant_keys & utilized_keys if k in context_sentences)
+    total_tokens_in_relevant_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in relevant_keys if k in chunk_sentence_map)
+    total_tokens_in_utilized_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in utilized_keys if k in chunk_sentence_map)
+    overlap_len = sum(_token_len(chunk_sentence_map[k]) for k in relevant_keys & utilized_keys if k in chunk_sentence_map)
 
     # Relevance: fraction of retrieved context (by token length) that is relevant to the question.
-    relevance = relevant_len / total_len if total_len > 0 else 0.0
+    relevance = total_tokens_in_relevant_sentences_across_chunks / total_tokens_in_all_chunks if total_tokens_in_all_chunks > 0 else 0.0
     # Utilization: fraction of retrieved context (by token length) actually used in the answer.
-    utilization = utilized_len / total_len if total_len > 0 else 0.0
+    utilization = total_tokens_in_utilized_sentences_across_chunks / total_tokens_in_all_chunks if total_tokens_in_all_chunks > 0 else 0.0
     # Completeness: fraction of relevant context (by token length) that was actually utilized.
-    completeness = overlap_len / relevant_len if relevant_len > 0 else 0.0
+    completeness = overlap_len / total_tokens_in_relevant_sentences_across_chunks if total_tokens_in_relevant_sentences_across_chunks > 0 else 0.0
 
-    support_info = annotation.get("sentence_support_information", [])
+    support_info = parsed_llm_response.get("sentence_support_information", [])
     # Adherence: True only if every response sentence is fully supported by the context (no hallucinations).
     adherence = all(s.get("fully_supported", False) for s in support_info) if support_info else False
 
@@ -212,18 +212,30 @@ def _compute_scores(annotation: dict, context_sentences: dict[str, str]) -> TRAC
         relevance=relevance,
         utilization=utilization,
         completeness=completeness,
-        adherence_explanation=annotation.get("overall_supported_explanation", ""),
-        relevance_explanation=annotation.get("relevance_explanation", ""),
-        annotation=annotation,
+        adherence_explanation=parsed_llm_response.get("overall_supported_explanation", ""),
+        relevance_explanation=parsed_llm_response.get("relevance_explanation", ""),
+        parsed_llm_response=parsed_llm_response,
     )
 
 
 def _evaluate_once(llm, question: str, chunks: list[Document], response: str) -> TRACeScores:
-    labeled_context, context_sentences = _label_context_sentences(chunks)
+    # labeled_chunks example:
+    #   "0a. The agreement shall commence on January 1st.
+    #    0b. Termination requires 30 days written notice.
+    #    1a. Liability is capped at $1M per incident."
+    # chunk_sentence_map example:
+    #   {"0a": "The agreement shall commence on January 1st.",
+    #    "0b": "Termination requires 30 days written notice.",
+    #    "1a": "Liability is capped at $1M per incident."}
+    labeled_chunks, chunk_sentence_map = _label_context_sentences(chunks)
+
+    # labeled_response (str fed into prompt):
+    #   "a. The agreement starts January 1st.
+    #    b. You must give 30 days notice to terminate."
     labeled_response, _                = _label_response_sentences(response)
 
     prompt = _ANNOTATION_PROMPT.format(
-        documents=labeled_context,
+        documents=labeled_chunks,
         question=question,
         answer=labeled_response,
     )
@@ -231,23 +243,23 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
     parser = JsonOutputParser()
 
     # First attempt.
-    raw = llm.invoke(prompt)
+    llm_response = llm.invoke(prompt)
     try:
-        annotation = parser.parse(raw.content)
-        return _compute_scores(annotation, context_sentences)
+        parsed_llm_response = parser.parse(llm_response.content)
+        return _compute_scores(parsed_llm_response, chunk_sentence_map)
     except OutputParserException:
         pass
 
     # Corrective retry — show the model its bad output and ask it to fix it.
     retry_messages = [
         HumanMessage(content=prompt),
-        AIMessage(content=raw.content),
-        HumanMessage(content=_CORRECTIVE_RETRY_MSG.format(bad_output=raw.content[:500])),
+        AIMessage(content=llm_response.content),
+        HumanMessage(content=_CORRECTIVE_RETRY_MSG.format(bad_output=llm_response.content[:500])),
     ]
-    raw2 = llm.invoke(retry_messages)
+    llm_response2 = llm.invoke(retry_messages)
     try:
-        annotation = parser.parse(raw2.content)
-        return _compute_scores(annotation, context_sentences)
+        parsed_llm_response = parser.parse(llm_response2.content)
+        return _compute_scores(parsed_llm_response, chunk_sentence_map)
     except OutputParserException as e:
         return TRACeScores(
             adherence=False,
@@ -288,5 +300,5 @@ def evaluate(llm, question: str, chunks: list[Document], response: str, n_runs: 
         completeness=sum(r.completeness for r in good) / n,
         adherence_explanation=good[-1].adherence_explanation,
         relevance_explanation=good[-1].relevance_explanation,
-        annotation={"runs": [r.annotation for r in good]},
+        parsed_llm_response={"runs": [r.parsed_llm_response for r in good]},
     )
