@@ -189,12 +189,12 @@ def _compute_scores(parsed_llm_response: dict, chunk_sentence_map: dict[str, str
     """Compute all four TRACe scores from GPT-4-style span annotations using length-ratio formulas."""
     total_tokens_in_all_chunks = sum(_token_len(s) for s in chunk_sentence_map.values())
 
-    relevant_keys = set(parsed_llm_response.get("all_relevant_sentence_keys", []))
-    utilized_keys = set(parsed_llm_response.get("all_utilized_sentence_keys", []))
+    all_relevant_sentence_keys = set(parsed_llm_response.get("all_relevant_sentence_keys", []))
+    all_utilized_sentence_keys = set(parsed_llm_response.get("all_utilized_sentence_keys", []))
 
-    total_tokens_in_relevant_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in relevant_keys if k in chunk_sentence_map)
-    total_tokens_in_utilized_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in utilized_keys if k in chunk_sentence_map)
-    overlap_len = sum(_token_len(chunk_sentence_map[k]) for k in relevant_keys & utilized_keys if k in chunk_sentence_map)
+    total_tokens_in_relevant_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in all_relevant_sentence_keys if k in chunk_sentence_map)
+    total_tokens_in_utilized_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in all_utilized_sentence_keys if k in chunk_sentence_map)
+    overlap_len = sum(_token_len(chunk_sentence_map[k]) for k in all_relevant_sentence_keys & all_utilized_sentence_keys if k in chunk_sentence_map)
 
     # Relevance: fraction of retrieved context (by token length) that is relevant to the question.
     relevance = total_tokens_in_relevant_sentences_across_chunks / total_tokens_in_all_chunks if total_tokens_in_all_chunks > 0 else 0.0
