@@ -245,7 +245,7 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
     # First attempt.
     llm_response = llm.invoke(prompt)
     try:
-        parsed_llm_response = parser.parse(llm_response.content)
+        parsed_llm_response = parser.parse(_strip_trailing_commas(llm_response.content))
         return _compute_scores(parsed_llm_response, chunk_sentence_map)
     except OutputParserException:
         pass
@@ -258,7 +258,7 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
     ]
     llm_response2 = llm.invoke(retry_messages)
     try:
-        parsed_llm_response = parser.parse(llm_response2.content)
+        parsed_llm_response = parser.parse(_strip_trailing_commas(llm_response2.content))
         return _compute_scores(parsed_llm_response, chunk_sentence_map)
     except OutputParserException as e:
         return TRACeScores(
@@ -268,7 +268,23 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
             completeness=0.0,
             adherence_explanation=f"parse error: {str(e)[:120]}",
             relevance_explanation="",
+            # Full raw judge output (both attempts), not the 120-char error preview above —
+            # lets us diagnose new malformation patterns without re-running the pipeline.
+            parsed_llm_response={
+                "parse_error": str(e),
+                "raw_first_attempt": llm_response.content,
+                "raw_retry_attempt": llm_response2.content,
+            },
         )
+
+
+def _strip_trailing_commas(raw: str) -> str:
+    # llama3.1:8b frequently emits a trailing comma before a closing ']' or '}'
+    # (e.g. from single-item arrays), which json.loads rejects outright.
+    fixed = re.sub(r",(\s*[\]}])", r"\1", raw)
+    if fixed != raw:
+        print("[_strip_trailing_commas] trailing comma stripped from judge output")
+    return fixed
 
 
 def _is_parse_error(run: TRACeScores) -> bool:

@@ -281,6 +281,24 @@
 
 ---
 
+### Experiment N @ N=100 — Scale-up of the best config (`notebooks/03_cuad_rag_scale.ipynb`)
+**Reason:** Exp N's N=20 result had too much sample variance to trust as a final number. Re-ran the identical config at N=100, n_runs=1 for a statistically stable baseline.
+**Full config:** same as Experiment N — embedder=`nomic-embed-text-v2-moe`, generator=`mistral-small3.2:24b`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V2, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=100, n_runs=1.
+
+**Judge bug found and fixed:** first pass showed 57/100 parse errors (scored 0/0/0), caused by `llama3.1:8b` emitting trailing commas in JSON arrays that `JsonOutputParser`'s strict parsing rejects. Added `_strip_trailing_commas()` sanitizer in `evaluation.py` before both parse attempts. Re-ran the eval cell only (retrieval/generation results were cached) — parse errors dropped to 1/100.
+
+| Metric | Ours (N=100) | Ours (N=20, Exp N) | Ref (GPT-4) |
+|---|---|---|---|
+| Relevance | 0.165 | 0.540 | 0.069 |
+| Utilization | 0.073 | 0.366 | 0.042 |
+| Completeness | 0.535 | 0.581 | 0.717 |
+| Adherence | 51% (51/100) | 30% (6/20) | 90% |
+| Parse errors | 1/100 | 2/20 | — |
+
+**Verdict:** Completeness and adherence hold up reasonably well at scale, and adherence is actually better than the N=20 figure suggested. But relevance and utilization collapse (0.540→0.165, 0.366→0.073) — a large, real gap now that the judge bug is fixed and residual parse errors are down to 1%. The N=20 slice was not representative for these two metrics specifically. **This is now the primary open question — not retrieval recall for YES answers.**
+
+---
+
 ## Summary Table
 
 All metrics are **averages across N=20 samples** with fixed evaluator. Ref metrics come from GPT-4 annotations in the RAGBench dataset and are fixed per sample.
@@ -300,9 +318,10 @@ All metrics are **averages across N=20 samples** with fixed evaluator. Ref metri
 | **N** | **cosine (HyDE)** | **nomic** | **mistral:24b** | **V2** | **0.540** | **0.366** | **0.581** | 0.717 | **30%** | **Best overall; adherence ceiling = retrieval misses** |
 | O | cosine (HyDE) | nomic | llama3.1:8b | V1 | 0.349 | 0.083 | 0.266 | 0.717 | 25% | Worst completeness; llama3.1 very prompt-sensitive |
 | P | cosine (HyDE) | nomic | llama3.1:8b | V2 | 0.385 | 0.152 | 0.640 | 0.717 | 25% | V2 lifts completeness but mistral still better overall |
+| **N @ N=100** | **cosine (HyDE)** | **nomic** | **mistral:24b** | **V2** | **0.165** | **0.073** | **0.535** | 0.717 | **51%** | **N=20→N=100 rerun; relevance/utilization collapse, not representative at N=20** |
 
-All experiments: judge=`llama3.1:8b-instruct-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M` (J–P), top_k=20, N=20, n_runs=3.  
-**Current best: N (HyDE + nomic + mistral + PROMPT_V2). Generator and prompt axes explored. Next lever: retrieval recall for YES-answer samples.**
+All experiments except N@N=100: judge=`llama3.1:8b-instruct-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M` (J–P), top_k=20, N=20, n_runs=3. N@N=100 uses N=100, n_runs=1.
+**Current best/most trustworthy: N @ N=100. Generator and prompt axes explored. Next lever: diagnose the relevance/utilization gap between N=20 and N=100.**
 
 ---
 
@@ -310,16 +329,14 @@ All experiments: judge=`llama3.1:8b-instruct-q4_K_M`, hyde_llm=`llama3.1:8b-inst
 
 - **Retrieval techniques explored so far are exhausted:** Chunk size, BM25 hybrid, reranking, and three embedders all tested — nomic+HyDE is the best of those. Retrieval recall for YES-answer samples remains an open problem.
 - **Generator and prompt axes explored:** mistral-small3.2:24b with PROMPT_V2 is the best generator+prompt config (Exp N). PROMPT_V2 — structured YES/NO with exact clause quoting — is significantly better than the generic PROMPT_V1 across all generators.
-- **Adherence ceiling (~30%) has two components:**
-  1. *Judge inconsistency* — ~2–3 samples per run where the judge marks FAIL despite its own explanation saying "supported by documents." This is a llama3.1:8b judge quality limit, not a generator issue.
-  2. *Retrieval recall for YES answers* — only 4/20 samples have a YES answer. Our system correctly answers YES on only 1 of those 4; the other 3 fail because HyDE retrieved related but non-responsive chunks. The generator is being honest about what's in the context — the context is wrong.
-- **Completeness near target:** Exp N achieves 0.581 vs ref 0.717 — gap of 0.136. Further gains require better retrieval recall on YES-answer samples.
-- **Next lever is retrieval recall:** Increasing top_k, running multiple HyDE queries per question, or improving chunking to keep clauses intact would directly address the missed YES answers.
+- **Completeness and adherence hold up at scale:** Exp N @ N=100 gives completeness 0.535 (vs 0.581 at N=20) and adherence 51% (vs 30% at N=20, better than expected). The N=20 adherence ceiling diagnosis (judge inconsistency + retrieval recall gaps) is superseded by the N=100 number — adherence isn't actually the bottleneck it looked like.
+- **New primary gap — relevance/utilization collapse at scale:** Exp N @ N=100 relevance/utilization (0.165 / 0.073) are far below the N=20 figures (0.540 / 0.366), after ruling out judge parse-error noise (residual error rate is 1%, not the 57% that first masked this). The N=20 slice was apparently unrepresentative specifically for these two metrics. Root cause not yet diagnosed — candidates: fixed `top_k=20` diluting relevance on longer contracts, or HyDE hypothesis quality varying more across the full dataset than the first 20 samples suggested.
+- **Judge JSON parsing is fragile at scale, not just a quality issue.** `llama3.1:8b` as judge emits trailing commas in JSON arrays; a strict parser silently zeroed out 57% of a 100-sample run before this was caught. Any future scale-up should watch the parse-error count as a first-class metric, not just trust the aggregate.
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **Scale to N=100, n_runs=1** — run Exp N config in a new notebook at larger sample size to get a statistically stable baseline before further changes. The dataset has 1530 samples available.
-2. **Improve retrieval recall for YES-answer samples** — increase top_k beyond 20, or generate multiple HyDE hypotheses per query and union the retrieved sets. The 3 missed YES answers (samples 4, 10, 13) all involve clauses in sections the HyDE query didn't point to.
+1. **Diagnose the relevance/utilization gap** — sample N=100 cases with low relevance/utilization but high completeness; inspect whether HyDE is pulling in excess irrelevant context on longer contracts, or whether the hypothesis quality itself is inconsistent across the fuller dataset.
+2. **Improve retrieval recall for YES-answer samples** — increase top_k beyond 20, or generate multiple HyDE hypotheses per query and union the retrieved sets. (Carried over from the original plan; secondary now that adherence looks less broken at scale.)
 3. **Sentence-level chunking** — CUAD clauses are typically one sentence; 500-char chunks may still split mid-clause. A sentence-aware splitter could improve both recall and grounding.
