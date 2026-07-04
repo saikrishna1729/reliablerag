@@ -3,7 +3,7 @@ import zipfile
 from pathlib import Path
 
 def zip_workspace(output_filename="ragstack_colab.zip"):
-    workspace_dir = Path("/Users/aishwaryashilpi/workspace/ragstack")
+    workspace_dir = Path(__file__).parent.parent.resolve()
     output_path = workspace_dir / "scripts" / output_filename
 
     # Files/directories to exclude

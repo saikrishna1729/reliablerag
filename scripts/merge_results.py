@@ -26,6 +26,9 @@ def df_to_markdown(df):
     return "\n".join(lines)
 
 def generate_markdown_summary(df, output_path, local_repo):
+    # Filter out mock runs (where embedder is 'mock')
+    df = df[df["embedder"] != "mock"].copy()
+
     # Base layout
     md_content = [
         "# 🏆 RAGStack Evaluation Leaderboard",
@@ -147,6 +150,20 @@ def generate_markdown_summary(df, output_path, local_repo):
 
     md_content.append(f"*Last updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}*")
     
+    # Clean up any old individual reports that are not in the active filtered sweep list
+    eval_dir = local_repo / "eval"
+    if eval_dir.exists():
+        for f in eval_dir.glob("evaluation_summary_*.md"):
+            stem = f.stem
+            if stem.startswith("evaluation_summary_"):
+                sweep_id_from_file = stem[len("evaluation_summary_"):]
+                if sweep_id_from_file not in unique_sweeps:
+                    try:
+                        f.unlink()
+                        print(f"Deleted old/mock report file: {f.name}")
+                    except Exception as e:
+                        print(f"Warning: Failed to delete old report file {f.name}: {e}")
+
     # Ensure directory exists
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, "w") as f:

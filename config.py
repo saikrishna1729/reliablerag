@@ -75,5 +75,5 @@ class ExperimentConfig:
 
     @property
     def chroma_collection_name(self) -> str:
-        """Unique collection per embedder — prevents dimension mismatch on Drive."""
-        return f"{self.dataset}_{self.embedder}"
+        """Unique collection per embedder and chunker settings — prevents dimension and chunk mismatch."""
+        return f"{self.dataset}_{self.embedder}_{self.chunker}_{self.chunk_size}"
