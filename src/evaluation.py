@@ -55,6 +55,51 @@ class HeuristicEvaluator:
             "adherence": min(max(adherence, 0.0), 1.0)
         }
 
+def parse_judge_score(response: str) -> Optional[float]:
+    """Parses the judge's response to extract a score, mapping it to a float in [0.2, 1.0]."""
+    if not response:
+        return None
+
+    response_clean = response.strip()
+    
+    # 1. Search for a standard pattern like "Score: [1-5]" or "Rating: [1-5]" (handles decimals too, e.g. 4.5)
+    match = re.search(r"(?:score|rating|rate|value):\s*([1-5](?:\.\d+)?)", response_clean, re.IGNORECASE)
+    if match:
+        return min(max(float(match.group(1)) / 5.0, 0.2), 1.0)
+
+    # 2. Search for score format like X/5
+    match = re.search(r"\b([1-5](?:\.\d+)?)\s*/\s*5\b", response_clean, re.IGNORECASE)
+    if match:
+        return min(max(float(match.group(1)) / 5.0, 0.2), 1.0)
+
+    # 3. Search for a standalone number from 1 to 5
+    match = re.search(r"\b([1-5](?:\.\d+)?)\b", response_clean)
+    if match:
+        return min(max(float(match.group(1)) / 5.0, 0.2), 1.0)
+
+    # 4. Search for textual representations of numbers 1-5 (case-insensitive)
+    text_nums = {
+        "one": 1.0, "two": 2.0, "three": 3.0, "four": 4.0, "five": 5.0,
+        "first": 1.0, "second": 2.0, "third": 3.0, "fourth": 4.0, "fifth": 5.0
+    }
+    response_lower = response_clean.lower()
+    for word, val in text_nums.items():
+        if re.search(r"\b" + word + r"\b", response_lower):
+            return val / 5.0
+
+    # 5. Semantic classification for binary questions:
+    # All evaluation criteria are Yes/No questions, so yes-like means 5/5, no-like means 1/5.
+    # Note: negative check comes first to handle cases like "not relevant".
+    neg_pattern = r"\b(?:no|incorrect|false|irrelevant|unsupported|hallucinated|hallucinating|hallucination|incomplete|not)\b"
+    pos_pattern = r"\b(?:yes|correct|true|relevant|pertinent|supported|adherent|utilize|utilized|completely|fully|complete)\b"
+
+    if re.search(neg_pattern, response_lower):
+        return 0.2
+    if re.search(pos_pattern, response_lower):
+        return 1.0
+
+    return None
+
 
 class LLMEvaluator:
     """LLM-as-a-judge evaluator using prompt templates to score responses 1-5."""
@@ -75,16 +120,10 @@ class LLMEvaluator:
             # We call the generator's generate method directly
             judge_response = self.generator.generate(prompt=prompt, context="")
             
-            # Extract score (1-5) using regex
-            match = re.search(r"Score:\s*([1-5])", judge_response, re.IGNORECASE)
-            if not match:
-                # Try finding the first digit between 1 and 5 in the output
-                match = re.search(r"\b([1-5])\b", judge_response)
-                
-            if match:
-                score_val = int(match.group(1))
-                # Normalize 1-5 to 0.2-1.0
-                return score_val / 5.0
+            # Extract score using the robust parsing helper
+            score_val = parse_judge_score(judge_response)
+            if score_val is not None:
+                return score_val
             else:
                 print(f"Warning: Judge response was unparseable. Response was:\n{judge_response}")
                 return 0.6  # Default fallback (3/5)

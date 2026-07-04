@@ -17,8 +17,11 @@ class OllamaGenerator:
         self.model_name = model_name
         self.host = host
 
-    def generate(self, prompt: str, context: str) -> str:
-        formatted_prompt = f"Context:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
+    def generate(self, prompt: str, context: str = "") -> str:
+        if context:
+            formatted_prompt = f"Context:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
+        else:
+            formatted_prompt = prompt
         try:
             response = requests.post(
                 f"{self.host}/api/generate",
@@ -65,9 +68,12 @@ class HuggingFaceGenerator:
                 max_length=512
             )
 
-    def generate(self, prompt: str, context: str) -> str:
+    def generate(self, prompt: str, context: str = "") -> str:
         self._init_pipeline()
-        input_text = f"Use the context below to answer the question.\n\nContext:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
+        if context:
+            input_text = f"Use the context below to answer the question.\n\nContext:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
+        else:
+            input_text = prompt
         outputs = self.pipeline(input_text)
         return outputs[0]["generated_text"].strip()
 
