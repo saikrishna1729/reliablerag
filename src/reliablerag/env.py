@@ -16,4 +16,4 @@ def load_secrets() -> None:
             os.environ[key] = _secrets.get_secret(key)
     else:
         from dotenv import load_dotenv
-        load_dotenv()
+        load_dotenv(override=True)

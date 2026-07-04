@@ -6,7 +6,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import Runnable, RunnableLambda, RunnableParallel, RunnablePassthrough
 
-_RAG_PROMPT_TEMPLATE: str = """\
+PROMPT_V1: str = """\
 You are a helpful assistant. Use the following pieces of retrieved context to answer the question.
 If you don't know the answer, say that you don't know. Use three sentences maximum and keep the answer concise.
 
@@ -16,6 +16,25 @@ Context:
 Question: {question}
 
 Answer:"""
+
+PROMPT_V2: str = """\
+You are a contract analysis assistant. The context below contains retrieved chunks from a legal contract.
+
+Answer directly based on the contract text in the context.
+- If the question asks whether a clause exists:
+  - If YES: quote the exact text from the context that answers the question.
+  - If NO: state it is absent. Do not describe what the context does contain.
+- If the question asks for a specific value (date, amount, period): state it directly and quote where it appears.
+- If the value is not present: state that it is absent.
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+
+_RAG_PROMPT_TEMPLATE: str = PROMPT_V2
 
 
 class TimingCallbackHandler(BaseCallbackHandler):

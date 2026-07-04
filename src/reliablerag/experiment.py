@@ -17,11 +17,12 @@ def run_rag_experiment(
     samples: list,
     retriever_factory: Callable[[Chroma, list[Document]], Runnable],
     embeddings: Embeddings,
-    llm: BaseChatModel,
+    generator_llm: BaseChatModel,
     splitter: TextSplitter,
     persist_dir: str,
     collection_tag: str,
     retrieve_label: str = "retrieve",
+    prompt_template: str | None = None,
 ) -> list[dict]:
     """Run the RAG pipeline over a list of RAGBench samples and return result dicts.
 
@@ -30,6 +31,9 @@ def run_rag_experiment(
       in a lambda or functools.partial before passing in.
 
     retrieve_label customises the [timing] line, e.g. "hyde retrieve" or "retrieve+rerank".
+    generator_llm is the model used to generate the final answer.
+    prompt_template pins the prompt for this experiment (import PROMPT_V1 / PROMPT_V2 from
+      reliablerag.chain). Defaults to _RAG_PROMPT_TEMPLATE if not provided.
     """
     results = []
     for i, sample in enumerate(samples):
@@ -59,10 +63,11 @@ def run_rag_experiment(
         retrieved_chunks = retriever.invoke(question)
         print(f"[timing] {retrieve_label} : {time.perf_counter() - t0:.3f}s")
 
-        rag_chain    = build_rag_chain(retriever, llm=llm)
+        rag_chain    = build_rag_chain(retriever, llm=generator_llm, prompt_template=prompt_template) if prompt_template else build_rag_chain(retriever, llm=generator_llm)
         our_response = rag_chain.invoke(question, config=RunnableConfig(callbacks=[TimingCallbackHandler()]))
 
-        print(f"  → {our_response[:100]}...")
+        print(f"  our: {our_response}")
+        print(f"  ref: {sample['response']}")
 
         results.append({
             "question"            : question,
@@ -95,7 +100,7 @@ def evaluate_results(
 
     Returns {"adherence_rate", "avg_relevance", "avg_utilization", "avg_completeness"}.
     """
-    for r in results:
+    for i, r in enumerate(results):
         scores = evaluate(judge_llm, r["question"], r["retrieved_chunks"], r["our_response"], n_runs=n_runs)
 
         r["our_adherence"]              = scores.adherence
@@ -107,7 +112,7 @@ def evaluate_results(
         r["our_parsed_llm_response"]    = scores.parsed_llm_response
 
         status = "PASS" if scores.adherence else "FAIL"
-        print(f"[{status}] {r['question'][:70]}...")
+        print(f"[{i+1}/{len(results)}] [{status}] {r['question'][:70]}...")
         print(f"  Adherence   : {status}  — {scores.adherence_explanation[:90]}")
         print(f"  Relevance   : {scores.relevance:.3f} — {scores.relevance_explanation[:90]}")
         print(f"  Utilization : {scores.utilization:.3f}")

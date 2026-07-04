@@ -63,7 +63,7 @@
 - Bumped evaluation from 5 → 20 CUAD samples, `n_runs=3`.  
 - `evaluation.py`: corrective retry on parse failure (shows the model its bad output, asks it to fix); failed runs excluded from average rather than counted as zeros.  
 - Prompt strengthened: JSON-only instruction added at top and bottom of `_ANNOTATION_PROMPT`.  
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine, chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine, chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3  
 
 | Metric | Ours | Ref (GPT-4) |
 |---|---|---|
@@ -83,7 +83,7 @@
 **Note:** All three configs run with the fixed evaluator (Exp E parse error fix applied).
 
 #### F1 — 1500/200
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine, chunk_size=1500, overlap=200, top_k=20, N=20, n_runs=3  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine, chunk_size=1500, overlap=200, top_k=20, N=20, n_runs=3  
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline |
 |---|---|---|---|
@@ -96,7 +96,7 @@
 **Verdict:** Best completeness (0.592) but adherence collapses to 10% — large chunks give the generator too much unfocused context, causing it to hedge. Net negative overall.
 
 #### F2 — 1000/150
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine, chunk_size=1000, overlap=150, top_k=20, N=20, n_runs=3  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine, chunk_size=1000, overlap=150, top_k=20, N=20, n_runs=3  
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline |
 |---|---|---|---|
@@ -115,7 +115,7 @@
 ### Experiment G — Hybrid retrieval (BM25 + dense cosine, RRF fusion)
 **Reason:** Completeness gap diagnosis from Exp E — dense retrieval misses clauses with vocabulary different from the query. BM25 exact-term matching should recover those misses.  
 **Change:** Added custom `BM25Retriever` (rank-bm25) alongside Chroma cosine retrieval. Combined via Reciprocal Rank Fusion (`rrf_k=60`, equal 0.5/0.5 weights). No change to chunk size (500/50) to isolate the retrieval change.  
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine+BM25 RRF, chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine+BM25 RRF, chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline |
 |---|---|---|---|
@@ -131,7 +131,7 @@
 ### Experiment H — Tune RRF weights (bm25_weight=0.3)
 **Reason:** Experiment G used equal-weight hybrid (both retrievers weight=1.0, unweighted RRF) which improved completeness but collapsed adherence. Hypothesis: reducing BM25's influence to 0.3 (dense=0.7) keeps the coverage benefit while cutting noise.  
 **Change:** Added `bm25_weight` parameter to `get_hybrid_retriever`. Set `bm25_weight=0.3`, `dense_weight=0.7`. Everything else identical to Exp G.  
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine+BM25 RRF (0.3/0.7), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine+BM25 RRF (0.3/0.7), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline | vs G (equal-weight) |
 |---|---|---|---|---|
@@ -148,7 +148,7 @@
 ### Experiment I — Reranker on top of equal-weight hybrid
 **Reason:** Experiment H showed weight tuning can't simultaneously recover completeness and adherence — the BM25 noise problem requires filtering, not down-weighting. A cross-encoder reranker applied after retrieval should keep BM25's recall while cutting irrelevant chunks before the generator sees them.  
 **Change:** Equal-weight hybrid (bm25_weight=0.5) over-fetches `fetch_k=40` candidates via RRF, then `BAAI/bge-reranker-base` cross-encoder reranks to `top_n=20`. New `get_hybrid_reranked_retriever` function in `retriever.py`. No change to chunking (500/50).  
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine+BM25 RRF (equal weight) + cross-encoder rerank, chunk_size=500, overlap=50, fetch_k=40, top_n=20, N=20, n_runs=3
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine+BM25 RRF (equal weight) + cross-encoder rerank, chunk_size=500, overlap=50, fetch_k=40, top_n=20, N=20, n_runs=3
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline | vs G (equal hybrid) |
 |---|---|---|---|---|
@@ -165,7 +165,7 @@
 ### Experiment J — HyDE (Hypothetical Document Embeddings)
 **Reason:** All hybrid retrieval variants (Exps G–I) improved completeness but collapsed adherence. Root cause diagnosis: vocabulary mismatch between query phrasing and contract clause phrasing. HyDE generates a hypothetical contract clause as a proxy query, embeds that instead of the raw query, and retrieves by vector — no BM25 noise, no reranker, just a semantically richer query representation.  
 **Change:** New `get_hyde_retriever` in `retriever.py`. At query time: LLM generates a 2–4 sentence hypothetical clause, that text is embedded via the same embeddings model, Chroma `similarity_search_by_vector` retrieves top-20. Generator LLM (`llama3.2:3b-instruct` or equivalent fast model) used for hypothesis generation to avoid doubling latency.  
-**Full config:** embedder=`nomic-embed-text-v2-moe`, judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine (via hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`gemma4:12b-it-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine (via hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline |
 |---|---|---|---|
@@ -181,7 +181,7 @@
 ### Experiment K — Swap embedder: BAAI/bge-large-en-v1.5 + HyDE
 **Reason:** Step J (HyDE) confirmed nomic closes the vocabulary gap, but the question remained: is nomic the best choice, or would a purpose-built contrastive sentence encoder (bge-large) do better? bge-large is explicitly trained for cosine retrieval via contrastive learning — better embedding geometry in theory.  
 **Change:** Enabled HuggingFace provider in `providers.py` (was commented out; also fixed `model_name` parameter mismatch). Created `embeddings_bge = create_embeddings("huggingface", "BAAI/bge-large-en-v1.5")` inline. Collection tag `_bge` to avoid cross-contaminating the nomic cache. Same HyDE pipeline as Exp J.  
-**Full config:** embedder=`bge-large-en-v1.5` (HuggingFace), judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+**Full config:** embedder=`bge-large-en-v1.5` (HuggingFace), generator=`gemma4:12b-it-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline | vs J (HyDE+nomic) |
 |---|---|---|---|---|
@@ -197,7 +197,7 @@
 ### Experiment L — Swap embedder: nlpaueb/legal-bert-base-uncased + HyDE
 **Reason:** bge-large is general-domain; legal-bert was trained on US legal text (English legal corpora). The hypothesis was that legal-domain vocabulary in the embedder would close the remaining gap between query and clause phrasing, even though legal-bert uses CLS-pooling rather than contrastive training.  
 **Change:** `embeddings_legal = create_embeddings("huggingface", "nlpaueb/legal-bert-base-uncased")`. Collection tag `_legalbert`. Same HyDE pipeline as Exps J and K.  
-**Full config:** embedder=`legal-bert-base-uncased` (HuggingFace), judge=`llama3.1:8b-instruct-q4_K_M`, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+**Full config:** embedder=`legal-bert-base-uncased` (HuggingFace), generator=`gemma4:12b-it-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
 
 | Metric | Ours | Ref (GPT-4) | vs E baseline | vs J (HyDE+nomic) |
 |---|---|---|---|---|
@@ -213,39 +213,113 @@
 
 ---
 
+### Experiment M — Generator model swap: gemma4 → mistral-small3.2:24b (PROMPT_V1)
+**Reason:** gemma4:12b used in E–L was the original default. mistral-small3.2:24b is a stronger instruction-following model. This experiment isolates the generator effect: same HyDE+nomic retrieval and PROMPT_V1 as Exp J, only the generator changes.  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`mistral-small3.2:24b`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+
+| Metric | Ours | Ref (GPT-4) | vs J (gemma4+V1) |
+|---|---|---|---|
+| Relevance | 0.454 | 0.069 | +0.120 |
+| Utilization | 0.179 | 0.042 | −0.015 |
+| Completeness | 0.403 | 0.717 | −0.175 |
+| Adherence | 40% (8/20) | 90% | +15pp |
+
+**Verdict:** Mistral with PROMPT_V1 improves adherence (+15pp) but completeness drops sharply. PROMPT_V1's open-ended "say I don't know" instruction causes mistral to hedge on many samples. Relevance is high (0.454), meaning retrieval is finding the right chunks — but the generator isn't extracting them fully. Next: try a contract-specific prompt.
+
+---
+
+### Experiment N — Contract-specific prompt: PROMPT_V2 + mistral-small3.2:24b
+**Reason:** PROMPT_V1 causes hedging regardless of model. PROMPT_V2 restructures the instruction: YES/NO answers with exact clause quoting, no escape hatch for "I don't know."  
+**PROMPT_V2 (current):** structured YES/NO — if YES quote exact text; if NO state absent only, no description of context.  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`mistral-small3.2:24b`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V2, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+
+| Metric | Ours | Ref (GPT-4) | vs M (mistral+V1) | vs J (gemma4+V1) |
+|---|---|---|---|---|
+| Relevance | 0.540 | 0.069 | +0.086 | +0.206 |
+| Utilization | 0.366 | 0.042 | +0.187 | +0.172 |
+| Completeness | 0.581 | 0.717 | +0.178 | +0.003 |
+| Adherence | 30% (6/20) | 90% | −10pp | +5pp |
+| Parse errors | 2/20 | — | — | — |
+
+**Verdict:** PROMPT_V2 is the dominant lever — utilization more than doubles vs M (+0.187), completeness recovers. Best overall profile of all experiments. Adherence stuck at 30% for two reasons: (1) 2 parse errors (judge failure, not fixable from prompt); (2) 3 YES-answer samples missed because the right chunks were not retrieved — the generator correctly says NO based on retrieved context but the answer IS in the full contract. Prompt tuning cannot fix retrieval misses.
+
+**Key per-sample finding:** Only 4/20 samples have a true YES answer. Our system answers YES on only 1 of those 4 (sample 20), and that one is a false positive. The other 3 YES answers (samples 4, 10, 13) are retrieval misses — HyDE retrieved related but non-responsive chunks.
+
+---
+
+### Experiment O — PROMPT_V1 + llama3.1:8b (comparison baseline)
+**Reason:** Direct comparison of llama3.1 vs gemma4 and mistral on the same HyDE+nomic config with PROMPT_V1.  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`llama3.1:8b-instruct-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V1, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+
+| Metric | Ours | Ref (GPT-4) | vs J (gemma4+V1) |
+|---|---|---|---|
+| Relevance | 0.349 | 0.069 | +0.015 |
+| Utilization | 0.083 | 0.042 | −0.111 |
+| Completeness | 0.266 | 0.717 | −0.312 |
+| Adherence | 25% (5/20) | 90% | 0pp |
+| Parse errors | 6/20 | — | — |
+
+**Verdict:** llama3.1 with PROMPT_V1 is the worst generator config of the three tested. High parse error rate (6/20) and lowest completeness (0.266). Highly sensitive to prompt wording.
+
+---
+
+### Experiment P — PROMPT_V2 + llama3.1:8b
+**Reason:** Test whether PROMPT_V2 helps llama3.1 as much as it helps mistral.  
+**Full config:** embedder=`nomic-embed-text-v2-moe`, generator=`llama3.1:8b-instruct-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M`, judge=`llama3.1:8b-instruct-q4_K_M`, prompt=PROMPT_V2, similarity=cosine (hypothetical embedding), chunk_size=500, overlap=50, top_k=20, N=20, n_runs=3
+
+| Metric | Ours | Ref (GPT-4) | vs O (llama3.1+V1) | vs N (mistral+V2) |
+|---|---|---|---|---|
+| Relevance | 0.385 | 0.069 | +0.036 | −0.155 |
+| Utilization | 0.152 | 0.042 | +0.069 | −0.214 |
+| Completeness | 0.640 | 0.717 | +0.374 | +0.059 |
+| Adherence | 25% (5/20) | 90% | 0pp | −5pp |
+| Parse errors | 1/20 | — | — | — |
+
+**Verdict:** PROMPT_V2 lifts llama3.1 dramatically on completeness (+0.374) but adherence stays flat at 25%. Mistral edges out llama3.1 on relevance (0.540 vs 0.385) and utilization (0.366 vs 0.152) — mistral is more consistent at following structured prompts. **Mistral + PROMPT_V2 (Exp N) is the best overall config.**
+
+**Generator axis conclusion:** mistral-small3.2:24b is the best generator of the three. It responds more reliably to PROMPT_V2, achieves highest relevance and utilization, and is stable across prompt variations. Focus remaining experiments on mistral.
+
+---
+
 ## Summary Table
 
 All metrics are **averages across N=20 samples** with fixed evaluator. Ref metrics come from GPT-4 annotations in the RAGBench dataset and are fixed per sample.
 
-| Exp | Retrieval | Embedder | chunk/overlap | Our Rel. | Our Util. | Our Comp. | Ref Comp. | Our Adh. | Notes |
-|-----|-----------|----------|---------------|----------|-----------|-----------|-----------|----------|-------|
-| **E (baseline)** | cosine | nomic | 500/50 | 0.173 | 0.097 | 0.564 | 0.717 | **55%** | Best adherence |
-| F1 | cosine | nomic | 1500/200 | 0.071 | 0.041 | 0.592 | 0.717 | 10% | Best comp, adherence collapses |
-| F2 | cosine | nomic | 1000/150 | 0.090 | 0.043 | 0.446 | 0.717 | 35% | Worst overall |
-| G | cosine+BM25 RRF (equal) | nomic | 500/50 | 0.112 | 0.086 | 0.590 | 0.717 | 30% | Best completeness before HyDE |
-| H | cosine+BM25 RRF (bm25=0.3) | nomic | 500/50 | 0.132 | 0.054 | 0.524 | 0.717 | 40% | Weight tuning: completeness fell back |
-| I | cosine+BM25 RRF (equal) + rerank | nomic | 500/50 | 0.135 | 0.091 | 0.479 | 0.717 | 20% | Worst adherence; reranker demotes grounding chunks |
-| **J (HyDE)** | cosine (hypothetical embedding) | nomic | 500/50 | **0.334** | **0.194** | **0.578** | 0.717 | 25% | Best rel/util by far; adherence gap is generator, not retrieval |
-| K | cosine (hypothetical embedding) | bge-large-en-v1.5 | 500/50 | 0.191 | 0.083 | 0.557 | 0.717 | 45% | Contrastive encoder doesn't beat nomic+HyDE |
-| L | cosine (hypothetical embedding) | legal-bert-base-uncased | 500/50 | 0.120 | 0.058 | 0.409 | 0.717 | 35% | Worst of all; CLS-pooling kills cosine geometry |
+| Exp | Retrieval | Embedder | Generator | Prompt | Our Rel. | Our Util. | Our Comp. | Ref Comp. | Our Adh. | Notes |
+|-----|-----------|----------|-----------|--------|----------|-----------|-----------|-----------|----------|-------|
+| **E (baseline)** | cosine | nomic | gemma4:12b | V1 | 0.173 | 0.097 | 0.564 | 0.717 | **55%** | Authoritative baseline |
+| F1 | cosine | nomic | gemma4:12b | V1 | 0.071 | 0.041 | 0.592 | 0.717 | 10% | Best comp, adherence collapses |
+| F2 | cosine | nomic | gemma4:12b | V1 | 0.090 | 0.043 | 0.446 | 0.717 | 35% | Worst overall |
+| G | cosine+BM25 RRF (equal) | nomic | gemma4:12b | V1 | 0.112 | 0.086 | 0.590 | 0.717 | 30% | Best completeness before HyDE |
+| H | cosine+BM25 RRF (bm25=0.3) | nomic | gemma4:12b | V1 | 0.132 | 0.054 | 0.524 | 0.717 | 40% | Weight tuning: completeness fell back |
+| I | cosine+BM25 RRF (equal) + rerank | nomic | gemma4:12b | V1 | 0.135 | 0.091 | 0.479 | 0.717 | 20% | Reranker demotes grounding chunks |
+| J | cosine (HyDE) | nomic | gemma4:12b | V1 | 0.334 | 0.194 | 0.578 | 0.717 | 25% | Best retrieval; vocabulary gap closed |
+| K | cosine (HyDE) | bge-large | gemma4:12b | V1 | 0.191 | 0.083 | 0.557 | 0.717 | 45% | Contrastive encoder doesn't beat nomic |
+| L | cosine (HyDE) | legal-bert | gemma4:12b | V1 | 0.120 | 0.058 | 0.409 | 0.717 | 35% | CLS-pooling kills cosine geometry |
+| M | cosine (HyDE) | nomic | mistral:24b | V1 | 0.454 | 0.179 | 0.403 | 0.717 | 40% | Mistral better adherence; V1 still hedges |
+| **N** | **cosine (HyDE)** | **nomic** | **mistral:24b** | **V2** | **0.540** | **0.366** | **0.581** | 0.717 | **30%** | **Best overall; adherence ceiling = retrieval misses** |
+| O | cosine (HyDE) | nomic | llama3.1:8b | V1 | 0.349 | 0.083 | 0.266 | 0.717 | 25% | Worst completeness; llama3.1 very prompt-sensitive |
+| P | cosine (HyDE) | nomic | llama3.1:8b | V2 | 0.385 | 0.152 | 0.640 | 0.717 | 25% | V2 lifts completeness but mistral still better overall |
 
-All experiments: judge=`llama3.1:8b-instruct-q4_K_M`, top_k=20, N=20, n_runs=3. Exps E–J: embedder=`nomic-embed-text-v2-moe`.  
-**Current best retrieval: J (HyDE + nomic). Embedding axis exhausted. Next lever: generator prompt.**
+All experiments: judge=`llama3.1:8b-instruct-q4_K_M`, hyde_llm=`llama3.1:8b-instruct-q4_K_M` (J–P), top_k=20, N=20, n_runs=3.  
+**Current best: N (HyDE + nomic + mistral + PROMPT_V2). Generator and prompt axes explored. Next lever: retrieval recall for YES-answer samples.**
 
 ---
 
 ## Open Diagnosis
 
-- **Retrieval is no longer the primary bottleneck:** HyDE + nomic (Exp J) doubled relevance and utilization vs baseline. Embedding axis exhausted across three models — nomic is the best of the three tested.
-- **Contrastive training > domain vocabulary for dense retrieval:** bge-large (contrastive, general-domain) outperformed legal-bert (CLS-pooling, legal-domain) on all metrics. A proper sentence-encoder objective matters more than in-domain pretraining for cosine similarity retrieval.
-- **Adherence gap is a generator problem:** Multiple samples score completeness 1.000 but fail adherence — the generator has the right context and still responds "I do not have enough information." This is conservative instruction-following, not a retrieval miss.
-- **Completeness gap partially closed (0.564 → 0.578):** Still 0.139 below ref (0.717). With retrieval addressed, the remaining gap is attributable to the generator not fully extracting and expressing what the retrieved chunks contain.
-- **Next lever is the generator prompt:** Explicitly instructing the model to answer from the provided context, and to state what the contract says rather than claiming ignorance, should recover adherence and lift completeness without any retrieval changes.
+- **Retrieval techniques explored so far are exhausted:** Chunk size, BM25 hybrid, reranking, and three embedders all tested — nomic+HyDE is the best of those. Retrieval recall for YES-answer samples remains an open problem.
+- **Generator and prompt axes explored:** mistral-small3.2:24b with PROMPT_V2 is the best generator+prompt config (Exp N). PROMPT_V2 — structured YES/NO with exact clause quoting — is significantly better than the generic PROMPT_V1 across all generators.
+- **Adherence ceiling (~30%) has two components:**
+  1. *Judge inconsistency* — ~2–3 samples per run where the judge marks FAIL despite its own explanation saying "supported by documents." This is a llama3.1:8b judge quality limit, not a generator issue.
+  2. *Retrieval recall for YES answers* — only 4/20 samples have a YES answer. Our system correctly answers YES on only 1 of those 4; the other 3 fail because HyDE retrieved related but non-responsive chunks. The generator is being honest about what's in the context — the context is wrong.
+- **Completeness near target:** Exp N achieves 0.581 vs ref 0.717 — gap of 0.136. Further gains require better retrieval recall on YES-answer samples.
+- **Next lever is retrieval recall:** Increasing top_k, running multiple HyDE queries per question, or improving chunking to keep clauses intact would directly address the missed YES answers.
 
 ---
 
 ## Next Steps (Priority Order)
 
-1. **Fix the generator prompt** — instruct the model to answer directly from provided context and never claim ignorance when context is present. Samples with completeness 1.000 but failing adherence are the direct evidence this is the lever. Re-run with HyDE + nomic to get a clean combined signal.
-2. **HyDE + generator prompt combined** — once the generator stops hedging, this should simultaneously improve adherence and completeness, bringing both closer to ref.
-3. **Sentence-level chunking** — CUAD clauses are typically one sentence; 500-char chunks may still split mid-clause. A sentence-aware splitter could improve both precision and completeness if the generator prompt fix reveals a remaining retrieval gap.
+1. **Scale to N=100, n_runs=1** — run Exp N config in a new notebook at larger sample size to get a statistically stable baseline before further changes. The dataset has 1530 samples available.
+2. **Improve retrieval recall for YES-answer samples** — increase top_k beyond 20, or generate multiple HyDE hypotheses per query and union the retrieved sets. The 3 missed YES answers (samples 4, 10, 13) all involve clauses in sections the HyDE query didn't point to.
+3. **Sentence-level chunking** — CUAD clauses are typically one sentence; 500-char chunks may still split mid-clause. A sentence-aware splitter could improve both recall and grounding.
