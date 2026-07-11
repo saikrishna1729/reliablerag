@@ -108,6 +108,7 @@ def run_experiment(config: ExperimentConfig) -> str:
     # 6. Run evaluation loop
     print("Running inference and evaluation loop...")
     run_rows = []
+    eval_details = []
     
     if config.run_id_prefix:
         run_id = f"{config.run_id_prefix}_{config.chunker}_{config.embedder}_{config.retriever}"
@@ -154,6 +155,26 @@ def run_experiment(config: ExperimentConfig) -> str:
                 "adherence": 0.0
             }
 
+        # Gather detailed evaluations for audit sheet
+        dataset_answer = row.get("response", "N/A")
+        details = getattr(evaluator, "last_details", {})
+        
+        eval_detail = {
+            "model": config.generator,
+            "question": question,
+            "pipeline_answer": answer,
+            "dataset_answer": dataset_answer,
+            "context_relevance_score": scores["context_relevance"],
+            "context_relevance_judge_response": details.get("context_relevance", {}).get("response", "N/A"),
+            "context_utilization_score": scores["context_utilization"],
+            "context_utilization_judge_response": details.get("context_utilization", {}).get("response", "N/A"),
+            "completeness_score": scores["completeness"],
+            "completeness_judge_response": details.get("completeness", {}).get("response", "N/A"),
+            "adherence_score": scores["adherence"],
+            "adherence_judge_response": details.get("adherence", {}).get("response", "N/A")
+        }
+        eval_details.append(eval_detail)
+
         # Build log row
         run_row = {
             "run_id": run_id,
@@ -192,6 +213,6 @@ def run_experiment(config: ExperimentConfig) -> str:
         print(f"{k}: {v:.4f}")
 
     # 8. Log run to CSV and master leaderboard
-    detailed_filename = log_experiment_run(config, run_rows, mean_metrics)
+    detailed_filename = log_experiment_run(config, run_rows, mean_metrics, eval_details)
     print("Experiment run finished successfully.\n")
     return detailed_filename

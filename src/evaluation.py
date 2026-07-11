@@ -117,8 +117,9 @@ class LLMEvaluator:
     def __init__(self, generator: Any):
         self.generator = generator
         self.heuristic = HeuristicEvaluator()
+        self.last_details = {}
 
-    def _ask_judge(self, criteria: str, data_str: str) -> float:
+    def _ask_judge(self, name: str, criteria: str, data_str: str) -> float:
         prompt = EVALUATOR_JUDGE_TEMPLATE.format(criteria=criteria, data_str=data_str)
         
         try:
@@ -127,6 +128,13 @@ class LLMEvaluator:
             
             # Extract score using the robust parsing helper
             score_val = parse_judge_score(judge_response)
+            
+            self.last_details[name] = {
+                "response": judge_response,
+                "score": score_val if score_val is not None else 0.6,
+                "status": "success" if score_val is not None else "unparseable"
+            }
+            
             if score_val is not None:
                 return score_val
             else:
@@ -134,9 +142,15 @@ class LLMEvaluator:
                 return 0.6  # Default fallback (3/5)
         except Exception as e:
             print(f"Warning: Judge LLM call failed: {e}. Falling back to heuristic.")
+            self.last_details[name] = {
+                "response": f"Error: {e}",
+                "score": -1.0,
+                "status": "failed"
+            }
             return -1.0 # Sentinel value for fallback
 
     def score(self, question: str, context: str, answer: str) -> Dict[str, float]:
+        self.last_details = {}
         # If generator is mock, fall back to mock score
         if hasattr(self.generator, "__class__") and self.generator.__class__.__name__ == "MockGenerator":
             return {
@@ -150,27 +164,35 @@ class LLMEvaluator:
         
         # 1. Context Relevance
         relevance_data = DATA_CONTEXT_RELEVANCE.format(question=question, context=context)
-        relevance = self._ask_judge(CRITERIA_CONTEXT_RELEVANCE, relevance_data)
+        relevance = self._ask_judge("context_relevance", CRITERIA_CONTEXT_RELEVANCE, relevance_data)
         if relevance < 0:
             relevance = heuristics["context_relevance"]
+            self.last_details["context_relevance"]["score"] = relevance
+            self.last_details["context_relevance"]["status"] = "heuristic_fallback"
             
         # 2. Context Utilization
         utilization_data = DATA_CONTEXT_UTILIZATION.format(question=question, context=context, answer=answer)
-        utilization = self._ask_judge(CRITERIA_CONTEXT_UTILIZATION, utilization_data)
+        utilization = self._ask_judge("context_utilization", CRITERIA_CONTEXT_UTILIZATION, utilization_data)
         if utilization < 0:
             utilization = heuristics["context_utilization"]
+            self.last_details["context_utilization"]["score"] = utilization
+            self.last_details["context_utilization"]["status"] = "heuristic_fallback"
             
         # 3. Completeness
         completeness_data = DATA_COMPLETENESS.format(question=question, answer=answer)
-        completeness = self._ask_judge(CRITERIA_COMPLETENESS, completeness_data)
+        completeness = self._ask_judge("completeness", CRITERIA_COMPLETENESS, completeness_data)
         if completeness < 0:
             completeness = heuristics["completeness"]
+            self.last_details["completeness"]["score"] = completeness
+            self.last_details["completeness"]["status"] = "heuristic_fallback"
             
         # 4. Adherence
         adherence_data = DATA_ADHERENCE.format(context=context, answer=answer)
-        adherence = self._ask_judge(CRITERIA_ADHERENCE, adherence_data)
+        adherence = self._ask_judge("adherence", CRITERIA_ADHERENCE, adherence_data)
         if adherence < 0:
             adherence = heuristics["adherence"]
+            self.last_details["adherence"]["score"] = adherence
+            self.last_details["adherence"]["status"] = "heuristic_fallback"
             
         return {
             "context_relevance": relevance,

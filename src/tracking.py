@@ -7,7 +7,8 @@ from config import ExperimentConfig, EVAL_DIR, BASE_DIR
 def log_experiment_run(
     config: ExperimentConfig,
     run_rows: List[Dict[str, Any]],
-    mean_metrics: Dict[str, float]
+    mean_metrics: Dict[str, float],
+    eval_details: List[Dict[str, Any]] = None
 ) -> str:
     """
     Saves the detailed run rows into a YYYYMMDD_HHMM_USER_DOMAIN_CHUNKER_EMBEDDER_RETRIEVER.csv
@@ -38,6 +39,14 @@ def log_experiment_run(
     detailed_df = pd.DataFrame(run_rows)
     detailed_df.to_csv(detailed_path, index=False)
     print(f"Detailed run logged to {detailed_path}")
+    
+    # Save extra sheet with raw judge responses if available
+    if eval_details:
+        eval_details_filename = f"{run_id}_eval_details.csv"
+        eval_details_path = EVAL_DIR / eval_details_filename
+        eval_details_df = pd.DataFrame(eval_details)
+        eval_details_df.to_csv(eval_details_path, index=False)
+        print(f"Detailed judge evaluations logged to {eval_details_path}")
     
     # 4. Append to master_tracking.csv
     master_path = BASE_DIR / "master_tracking.csv"
