@@ -16,8 +16,12 @@ def run_experiment(config: ExperimentConfig) -> str:
     """
     Orchestrates a single RAG benchmarking experiment from loading data to logging results.
     """
+    exp_start_time = time.time()
+    exp_start_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(exp_start_time))
+
     print(f"\n========================================================")
     print(f"Starting experiment for user: {config.username}")
+    print(f"Start Time: {exp_start_str}")
     print(f"Profile: {config.profile}")
     print(f"Dataset: {config.dataset} (n_records: {config.n_records})")
     print(f"Configuration: Chunker={config.chunker}, Embedder={config.embedder}, "
@@ -208,9 +212,16 @@ def run_experiment(config: ExperimentConfig) -> str:
         "mean_latency_ms": float(np.mean(latencies)) if latencies else 0.0
     }
 
+    exp_end_time = time.time()
+    exp_end_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(exp_end_time))
+    elapsed_time = exp_end_time - exp_start_time
+
     print("\n--- Summary Results ---")
     for k, v in mean_metrics.items():
         print(f"{k}: {v:.4f}")
+    print(f"Start Time: {exp_start_str}")
+    print(f"End Time: {exp_end_str}")
+    print(f"Total Time Elapsed: {elapsed_time:.2f} seconds (for {len(df)} records)")
 
     # 8. Log run to CSV and master leaderboard
     detailed_filename = log_experiment_run(config, run_rows, mean_metrics, eval_details)
