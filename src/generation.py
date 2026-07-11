@@ -84,6 +84,10 @@ def get_generator(config: ExperimentConfig):
         return MockGenerator()
     elif config.generator == "ollama":
         return OllamaGenerator("gemma3:4b-it-q4_K_M")
+    elif config.generator == "llama3:8b":
+        return OllamaGenerator("llama3:8b")
+    elif config.generator == "qwen2.5:7b":
+        return OllamaGenerator("qwen2.5:7b")
     elif config.generator == "hf-small":
         return HuggingFaceGenerator("google/flan-t5-base")
     elif config.generator == "hf-large":

@@ -31,7 +31,7 @@ def main():
     )
     parser.add_argument(
         "--generator",
-        choices=["mock", "ollama", "hf-small", "hf-large"],
+        choices=["mock", "ollama", "hf-small", "hf-large", "llama3:8b", "qwen2.5:7b"],
         default=None,
         help="Override profile default generator"
     )
