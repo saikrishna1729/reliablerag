@@ -1,6 +1,17 @@
 import re
 from typing import Dict, Any, List, Optional
 from config import ExperimentConfig
+from prompts.evaluation import (
+    EVALUATOR_JUDGE_TEMPLATE,
+    CRITERIA_CONTEXT_RELEVANCE,
+    CRITERIA_CONTEXT_UTILIZATION,
+    CRITERIA_COMPLETENESS,
+    CRITERIA_ADHERENCE,
+    DATA_CONTEXT_RELEVANCE,
+    DATA_CONTEXT_UTILIZATION,
+    DATA_COMPLETENESS,
+    DATA_ADHERENCE,
+)
 
 def clean_tokenize_set(text: str) -> set:
     """Returns a set of lowercase words from text, ignoring short tokens."""
@@ -108,13 +119,7 @@ class LLMEvaluator:
         self.heuristic = HeuristicEvaluator()
 
     def _ask_judge(self, criteria: str, data_str: str) -> float:
-        prompt = (
-            f"You are an expert evaluator. Rate the system on {criteria}.\n\n"
-            f"{data_str}\n\n"
-            f"Please respond exactly in this format:\n"
-            f"Score: [Insert a single number from 1 to 5]\n"
-            f"Reasoning: [One line explanation]\n"
-        )
+        prompt = EVALUATOR_JUDGE_TEMPLATE.format(criteria=criteria, data_str=data_str)
         
         try:
             # We call the generator's generate method directly
@@ -144,26 +149,26 @@ class LLMEvaluator:
         heuristics = self.heuristic.score(question, context, answer)
         
         # 1. Context Relevance
-        relevance_data = f"Question: {question}\nContext: {context}"
-        relevance = self._ask_judge("Context Relevance: Is the context pertinent to answering the question?", relevance_data)
+        relevance_data = DATA_CONTEXT_RELEVANCE.format(question=question, context=context)
+        relevance = self._ask_judge(CRITERIA_CONTEXT_RELEVANCE, relevance_data)
         if relevance < 0:
             relevance = heuristics["context_relevance"]
             
         # 2. Context Utilization
-        utilization_data = f"Question: {question}\nContext: {context}\nAnswer: {answer}"
-        utilization = self._ask_judge("Context Utilization: Does the answer utilize facts from the context?", utilization_data)
+        utilization_data = DATA_CONTEXT_UTILIZATION.format(question=question, context=context, answer=answer)
+        utilization = self._ask_judge(CRITERIA_CONTEXT_UTILIZATION, utilization_data)
         if utilization < 0:
             utilization = heuristics["context_utilization"]
             
         # 3. Completeness
-        completeness_data = f"Question: {question}\nAnswer: {answer}"
-        completeness = self._ask_judge("Completeness: Does the answer fully address the user question?", completeness_data)
+        completeness_data = DATA_COMPLETENESS.format(question=question, answer=answer)
+        completeness = self._ask_judge(CRITERIA_COMPLETENESS, completeness_data)
         if completeness < 0:
             completeness = heuristics["completeness"]
             
         # 4. Adherence
-        adherence_data = f"Context: {context}\nAnswer: {answer}"
-        adherence = self._ask_judge("Adherence: Is the answer fully supported by the context without hallucinating information not present in the context?", adherence_data)
+        adherence_data = DATA_ADHERENCE.format(context=context, answer=answer)
+        adherence = self._ask_judge(CRITERIA_ADHERENCE, adherence_data)
         if adherence < 0:
             adherence = heuristics["adherence"]
             

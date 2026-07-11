@@ -1,6 +1,7 @@
 import requests
 from typing import Any
 from config import ExperimentConfig
+from prompts.generation import OLLAMA_GENERATION_TEMPLATE, HF_GENERATION_TEMPLATE
 
 class OllamaNotAvailableError(Exception):
     pass
@@ -19,7 +20,7 @@ class OllamaGenerator:
 
     def generate(self, prompt: str, context: str = "") -> str:
         if context:
-            formatted_prompt = f"Context:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
+            formatted_prompt = OLLAMA_GENERATION_TEMPLATE.format(context=context, prompt=prompt)
         else:
             formatted_prompt = prompt
         try:
@@ -71,7 +72,7 @@ class HuggingFaceGenerator:
     def generate(self, prompt: str, context: str = "") -> str:
         self._init_pipeline()
         if context:
-            input_text = f"Use the context below to answer the question.\n\nContext:\n{context}\n\nQuestion: {prompt}\n\nAnswer:"
+            input_text = HF_GENERATION_TEMPLATE.format(context=context, prompt=prompt)
         else:
             input_text = prompt
         outputs = self.pipeline(input_text)
