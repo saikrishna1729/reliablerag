@@ -11,6 +11,18 @@ def get_default_username() -> str:
     except Exception:
         return os.environ.get("USER", "anonymous")
 
+def parse_n_records(val):
+    if val is None:
+        return None
+    val_str = str(val).strip().lower()
+    if val_str in ("none", "null", "", "0", "-1"):
+        return None
+    try:
+        parsed_val = int(val)
+        return parsed_val if parsed_val > 0 else None
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid n_records value: '{val}'. Expected an integer or 'None'.")
+
 def main():
     parser = argparse.ArgumentParser(description="RAGStack Benchmarking Pipeline")
     
@@ -57,7 +69,7 @@ def main():
     )
     parser.add_argument(
         "-n", "--n_records",
-        type=int,
+        type=parse_n_records,
         default=None,
         help="Number of records to evaluate (None for full dataset)"
     )

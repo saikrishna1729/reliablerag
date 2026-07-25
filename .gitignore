@@ -7,11 +7,15 @@ __pycache__/
 # Data and models (live on Google Drive)
 data/raw/
 data/processed/
+data/rgb/
 chroma_db/
 
 # Eval outputs (live on Google Drive)
 eval/results/runs/*.csv
+eval/results/runs/*.json
+eval/results/rgb/*.json
 !eval/results/runs/.gitkeep
+!eval/results/rgb/.gitkeep
 master_tracking.csv
 
 # SRC Zip file
