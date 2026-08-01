@@ -14,9 +14,10 @@ class MockGenerator:
 
 class OllamaGenerator:
     """Ollama generator that uses local Ollama REST API."""
-    def __init__(self, model_name: str, host: str = "http://localhost:11434"):
+    def __init__(self, model_name: str, host: str = "http://localhost:11434", timeout: int = 180):
         self.model_name = model_name
         self.host = host
+        self.timeout = timeout
 
     def generate(self, prompt: str, context: str = "") -> str:
         if context:
@@ -32,7 +33,7 @@ class OllamaGenerator:
                     "stream": False,
                     "options": {"temperature": 0.0}
                 },
-                timeout=30
+                timeout=self.timeout
             )
             response.raise_for_status()
             return response.json()["response"].strip()

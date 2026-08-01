@@ -163,6 +163,10 @@ def main():
         '--judge_generator', type=str, default=None,
         help='Model name for the judge generator (defaults to the same as generator)'
     )
+    parser.add_argument(
+        '--run_id', type=str, default=None,
+        help='Run ID prefix or timestamp to append to output filename. If not provided, a timestamp is generated.'
+    )
     
     args = parser.parse_args()
     
@@ -180,7 +184,7 @@ def main():
             if line.strip():
                 instances.append(json.loads(line))
                 
-    if args.n_records is not None:
+    if args.n_records is not None and args.n_records > 0:
         instances = instances[:args.n_records]
     print(f"Loaded {len(instances)} records for evaluation.")
     
@@ -200,9 +204,12 @@ def main():
     output_dir = os.path.join(DATA_DIR.parent, "eval", "results", "rgb")
     os.makedirs(output_dir, exist_ok=True)
     
+    import time
+    run_id = args.run_id if args.run_id else time.strftime("%Y%m%d_%H%M%S")
     output_filename = f"prediction_{args.dataset}_{args.generator}_noise{args.noise_rate}_passage{args.passage_num}_correct{args.correct_rate}"
     if args.use_llm_judge:
         output_filename += "_judge"
+    output_filename += f"_{run_id}"
     output_json_path = os.path.join(output_dir, f"{output_filename}.json")
     output_summary_path = os.path.join(output_dir, f"{output_filename}_summary.json")
     
