@@ -1,0 +1,15 @@
+📝 Logging session output to: eval/results/rgb/batch_experiments.log
+🔧 Mock Validation mode enabled.
+📋 Starting automated batch pipeline of 3 scheduled runs.
+This will execute all scheduled runs sequentially.
+
+⏭️  [Run 1/3] Skipping: Model=mock, Dataset=en, Noise=0.4
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_mock_noise0.4_passage5_correct0.0_judge_20260801_160634_summary.json
+
+⏭️  [Run 2/3] Skipping: Model=mock, Dataset=en_int, Noise=0.2
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_int_mock_noise0.2_passage5_correct0.0_judge_20260801_160637_summary.json
+
+⏭️  [Run 3/3] Skipping: Model=mock, Dataset=en_fact, Noise=1.0
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_fact_mock_noise1.0_passage5_correct0.0_judge_20260801_160639_summary.json
+
+🎉 All scheduled experiments completed!
