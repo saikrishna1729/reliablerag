@@ -24,19 +24,50 @@ class OllamaGenerator:
             formatted_prompt = OLLAMA_GENERATION_TEMPLATE.format(context=context, prompt=prompt)
         else:
             formatted_prompt = prompt
+
+        # Attempt to split system prompt if embedded
+        system_prompt = None
+        user_prompt = formatted_prompt
+        
+        # Check for system prompt indicators (e.g., standard RGB assistant prompt prefix)
+        if "You are an accurate and reliable" in formatted_prompt or "You are a" in formatted_prompt[:100]:
+            parts = formatted_prompt.split("\n\n", 1)
+            if len(parts) == 2:
+                system_prompt = parts[0]
+                user_prompt = parts[1]
+
         try:
-            response = requests.post(
-                f"{self.host}/api/generate",
-                json={
-                    "model": self.model_name,
-                    "prompt": formatted_prompt,
-                    "stream": False,
-                    "options": {"temperature": 0.0}
-                },
-                timeout=self.timeout
-            )
-            response.raise_for_status()
-            return response.json()["response"].strip()
+            if system_prompt:
+                # Use /api/chat for clean system/user message layout
+                response = requests.post(
+                    f"{self.host}/api/chat",
+                    json={
+                        "model": self.model_name,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "stream": False,
+                        "options": {"temperature": 0.0}
+                    },
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                return response.json()["message"]["content"].strip()
+            else:
+                # Fallback to standard text generation endpoint
+                response = requests.post(
+                    f"{self.host}/api/generate",
+                    json={
+                        "model": self.model_name,
+                        "prompt": formatted_prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.0}
+                    },
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                return response.json()["response"].strip()
         except requests.exceptions.ConnectionError:
             raise OllamaNotAvailableError(
                 f"Ollama server is not running at {self.host}. Please start it and pull '{self.model_name}'"
@@ -89,6 +120,8 @@ def get_generator(config: ExperimentConfig):
         return OllamaGenerator("llama3:8b")
     elif config.generator == "qwen2.5:7b":
         return OllamaGenerator("qwen2.5:7b")
+    elif config.generator == "qwen2.5:14b":
+        return OllamaGenerator("qwen2.5:14b")
     elif config.generator == "hf-small":
         return HuggingFaceGenerator("google/flan-t5-base")
     elif config.generator == "hf-large":

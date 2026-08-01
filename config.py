@@ -14,7 +14,7 @@ EVAL_DIR  = BASE_DIR / "eval" / "results" / "runs"
 
 # ── Type aliases ───────────────────────────────────────────────────────────
 EmbedderType  = Literal["mock", "minilm", "bge-small", "bge-large", "ollama"]
-GeneratorType = Literal["mock", "ollama", "hf-small", "hf-large", "llama3:8b", "qwen2.5:7b"]
+GeneratorType = Literal["mock", "ollama", "hf-small", "hf-large", "llama3:8b", "qwen2.5:7b", "qwen2.5:14b"]
 EvaluatorType = Literal["mock", "heuristic", "llm"]
 ProfileType   = Literal["local-mock", "local-real", "colab-gpu"]
 

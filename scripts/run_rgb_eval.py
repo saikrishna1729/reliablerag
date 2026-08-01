@@ -137,7 +137,7 @@ def main():
     )
     parser.add_argument(
         '--generator', type=str, default='mock',
-        help='Generator model name (mock, hf-small, hf-large, llama3:8b, qwen2.5:7b, etc.)'
+        help='Generator model name (mock, hf-small, hf-large, llama3:8b, qwen2.5:7b, qwen2.5:14b, etc.)'
     )
     parser.add_argument(
         '--passage_num', type=int, default=5,
@@ -304,7 +304,8 @@ def main():
             
         # Rejection metric
         if args.use_llm_judge:
-            if "not addressed" in r['judge_rejection'].lower():
+            judge_res = r['judge_rejection'].lower()
+            if "not addressed" in judge_res or "cannot solve" in judge_res or judge_res.strip().startswith("no"):
                 rejection_count += 1
         else:
             if labels == [-1]:
