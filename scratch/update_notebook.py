@@ -1,0 +1,162 @@
+import json
+from pathlib import Path
+
+def update_notebook():
+    notebook_path = Path("notebooks/run_pipeline_colab.ipynb")
+    if not notebook_path.exists():
+        print(f"Error: Notebook not found at {notebook_path}")
+        return
+
+    with open(notebook_path, "r", encoding="utf-8") as f:
+        nb = json.load(f)
+
+    updated = False
+    for cell in nb["cells"]:
+        if cell["cell_type"] == "code" and any("mean_latency_ms" in line for line in cell["source"]):
+            # Replace the cell content with the new 2x3 plotting code
+            cell["source"] = [
+                "import matplotlib.pyplot as plt\n",
+                "import seaborn as sns\n",
+                "\n",
+                "if os.path.exists(master_path) and len(df) > 0:\n",
+                "    # Parse timestamp\n",
+                "    df['timestamp_dt'] = pd.to_datetime(df['timestamp'], errors='coerce')\n",
+                "    df = df.sort_values(by='timestamp_dt', ascending=True)\n",
+                "    \n",
+                "    latest_run_file = \"eval/latest_run.txt\"\n",
+                "    current_run_df = pd.DataFrame()\n",
+                "    latest_sweep_id = None\n",
+                "    latest_dataset = None\n",
+                "    \n",
+                "    def get_sweep_prefix(run_id, dataset):\n",
+                "        if not isinstance(dataset, str) or not isinstance(run_id, str):\n",
+                "            return run_id\n",
+                "        idx = run_id.find(dataset)\n",
+                "        if idx != -1:\n",
+                "            return run_id[:idx + len(dataset)]\n",
+                "        return run_id\n",
+                "\n",
+                "    # Option 1: Retrieve from RUN_ID_PREFIX python variable defined in the session\n",
+                "    if 'RUN_ID_PREFIX' in globals() and RUN_ID_PREFIX:\n",
+                "        current_run_df = df[df['run_id'].str.startswith(RUN_ID_PREFIX, na=False)]\n",
+                "        if not current_run_df.empty:\n",
+                "            latest_sweep_id = RUN_ID_PREFIX\n",
+                "            latest_dataset = current_run_df.iloc[0]['dataset']\n",
+                "            print(f\"Loaded {len(current_run_df)} runs matching RUN_ID_PREFIX '{RUN_ID_PREFIX}'\")\n",
+                "\n",
+                "    # Option 2: Retrieve exact run IDs from latest_run.txt marker file\n",
+                "    if os.path.exists(latest_run_file):\n",
+                "        try:\n",
+                "            with open(latest_run_file, \"r\") as f:\n",
+                "                latest_run_ids = [line.strip() for line in f.read().splitlines() if line.strip()]\n",
+                "\n",
+                "            current_run_df = df[df['run_id'].isin(latest_run_ids)]\n",
+                "            if not current_run_df.empty:\n",
+                "                first_row = current_run_df.iloc[0]\n",
+                "                latest_dataset = first_row['dataset']\n",
+                "                earliest_run = current_run_df.sort_values(by='timestamp_dt').iloc[0]\n",
+                "                latest_sweep_id = get_sweep_prefix(earliest_run['run_id'], latest_dataset)\n",
+                "                print(f\"Loaded {len(current_run_df)} runs from marker file '{latest_run_file}'\")\n",
+                "        except Exception as e:\n",
+                "            print(f\"Warning: Failed to read latest_run.txt ({e}). Falling back to time grouping.\")\n",
+                "            current_run_df = pd.DataFrame()\n",
+                "\n",
+                "    # Option 3: Fallback to grouping latest runs within a 15-minute time window\n",
+                "    if current_run_df.empty and not df.empty:\n",
+                "        latest_run = df.iloc[-1]\n",
+                "        latest_time = latest_run['timestamp_dt']\n",
+                "        latest_dataset = latest_run['dataset']\n",
+                "        latest_user = latest_run['username']\n",
+                "        \n",
+                "        time_threshold = pd.Timedelta(minutes=15)\n",
+                "        current_run_df = df[\n",
+                "            (df['dataset'] == latest_dataset) & \n",
+                "            (df['username'] == latest_user) & \n",
+                "            ((latest_time - df['timestamp_dt']) <= time_threshold) & \n",
+                "            ((latest_time - df['timestamp_dt']) >= pd.Timedelta(seconds=0))\n",
+                "        ]\n",
+                "        earliest_run = current_run_df.sort_values(by='timestamp_dt').iloc[0]\n",
+                "        latest_sweep_id = get_sweep_prefix(earliest_run['run_id'], latest_dataset)\n",
+                "        print(f\"Grouped {len(current_run_df)} runs from latest 15-minute time window.\")\n",
+                "\n",
+                "    if not current_run_df.empty:\n",
+                "        print(f\"Plotting Sweep ID: {latest_sweep_id} | Dataset: {latest_dataset}\")\n",
+                "        \n",
+                "        # Exclude mock runs unless they are the only ones\n",
+                "        colab_runs = current_run_df[current_run_df['embedder'].isin(['bge-small', 'bge-large'])]\n",
+                "        if colab_runs.empty:\n",
+                "            colab_runs = current_run_df\n",
+                "            \n",
+                "        # Set plotting theme\n",
+                "        sns.set_theme(style=\"whitegrid\")\n",
+                "        fig, axes = plt.subplots(2, 3, figsize=(18, 10))\n",
+                "        \n",
+                "        # 1. Adherence by Configuration\n",
+                "        sns.barplot(ax=axes[0, 0], data=colab_runs, x=\"chunker\", y=\"mean_adherence\", hue=\"retriever\", palette=\"muted\")\n",
+                "        axes[0, 0].set_title(\"Mean Adherence\")\n",
+                "        axes[0, 0].set_ylim(0, 1.0)\n",
+                "        \n",
+                "        # 2. Context Relevance\n",
+                "        sns.barplot(ax=axes[0, 1], data=colab_runs, x=\"chunker\", y=\"mean_context_relevance\", hue=\"retriever\", palette=\"muted\")\n",
+                "        axes[0, 1].set_title(\"Context Relevance\")\n",
+                "        axes[0, 1].set_ylim(0, 1.0)\n",
+                "\n",
+                "        # 3. Context Utilization\n",
+                "        sns.barplot(ax=axes[0, 2], data=colab_runs, x=\"chunker\", y=\"mean_context_utilization\", hue=\"retriever\", palette=\"muted\")\n",
+                "        axes[0, 2].set_title(\"Context Utilization\")\n",
+                "        axes[0, 2].set_ylim(0, 1.0)\n",
+                "        \n",
+                "        # 4. Completeness\n",
+                "        sns.barplot(ax=axes[1, 0], data=colab_runs, x=\"chunker\", y=\"mean_completeness\", hue=\"retriever\", palette=\"muted\")\n",
+                "        axes[1, 0].set_title(\"Mean Completeness\")\n",
+                "        axes[1, 0].set_ylim(0, 1.0)\n",
+                "        \n",
+                "        # 5. Latency\n",
+                "        sns.barplot(ax=axes[1, 1], data=colab_runs, x=\"chunker\", y=\"mean_latency_ms\", hue=\"retriever\", palette=\"muted\")\n",
+                "        axes[1, 1].set_title(\"Mean Latency (ms)\")\n",
+                "        \n",
+                "        # Hide the empty 6th subplot\n",
+                "        fig.delaxes(axes[1, 2])\n",
+                "        \n",
+                "        plt.suptitle(f\"RAG Benchmark Performance\\nSweep ID: {latest_sweep_id}\", fontsize=14, fontweight='bold')\n",
+                "        \n",
+                "        # Format overlay textbox\n",
+                "        run_details = []\n",
+                "        for _, row in colab_runs.sort_values(by=\"mean_adherence\", ascending=False).iterrows():\n",
+                "            run_details.append(\n",
+                "                f\"• {row['chunker']}/{row['retriever']} ({row['embedder']}) -> \"\n",
+                "                f\"Adh: {row['mean_adherence']:.2f}, Comp: {row['mean_completeness']:.2f}, Lat: {row['mean_latency_ms']:.0f}ms\"\n",
+                "            )\n",
+                "        run_details_str = \"Run Configurations Plotted:\\n\" + \"\\n\".join(run_details)\n",
+                "        \n",
+                "        fig.text(\n",
+                "            0.05, 0.01, run_details_str, \n",
+                "            fontsize=8, family='monospace', \n",
+                "            bbox=dict(facecolor='white', alpha=0.9, boxstyle='round,pad=0.5', edgecolor='gray')\n",
+                "        )\n",
+                "        \n",
+                "        plt.subplots_adjust(bottom=0.18)\n",
+                "        \n",
+                "        # Save plot image\n",
+                "        os.makedirs(\"eval\", exist_ok=True)\n",
+                "        plot_path = f\"eval/benchmark_plot_{latest_sweep_id}.png\"\n",
+                "        plt.savefig(plot_path, dpi=300)\n",
+                "        print(f\"Plot successfully saved to '{plot_path}'\")\n",
+                "        plt.show()\n",
+                "    else:\n",
+                "        print(\"No runs found.\")\n",
+                "else:\n",
+                "    print(\"Run the pipeline first to generate metrics.\")"
+            ]
+            updated = True
+            break
+
+    if updated:
+        with open(notebook_path, "w", encoding="utf-8") as f:
+            json.dump(nb, f, indent=1, ensure_ascii=False)
+        print("Notebook updated successfully.")
+    else:
+        print("Error: Could not find the plotting cell in the notebook.")
+
+if __name__ == "__main__":
+    update_notebook()

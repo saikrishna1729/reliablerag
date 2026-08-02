@@ -1,0 +1,73 @@
+📝 Logging session output to: eval/results/rgb/batch_experiments.log
+🔧 Mock Validation mode enabled.
+📋 Starting automated batch pipeline of 3 scheduled runs.
+This will execute all scheduled runs sequentially.
+
+⏭️  [Run 1/3] Skipping: Model=mock, Dataset=en, Noise=0.4
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_mock_noise0.4_passage5_correct0.0_judge_20260801_160634_summary.json
+
+⏭️  [Run 2/3] Skipping: Model=mock, Dataset=en_int, Noise=0.2
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_int_mock_noise0.2_passage5_correct0.0_judge_20260801_160637_summary.json
+
+⏭️  [Run 3/3] Skipping: Model=mock, Dataset=en_fact, Noise=1.0
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_fact_mock_noise1.0_passage5_correct0.0_judge_20260801_160639_summary.json
+
+🎉 All scheduled experiments completed!
+📝 Logging session output to: eval/results/rgb/batch_experiments.log
+🔧 Mock Validation mode enabled.
+📋 Starting automated batch pipeline of 3 scheduled runs.
+This will execute all scheduled runs sequentially.
+
+======================================================================
+🚀 RUN 1/3 | Model: mock | Dataset: en | Noise Rate: 0.4
+Remaining Runs: 2
+======================================================================
+Loading dataset from: /Users/aishwaryashilpi/workspace/ragstack/data/rgb/en.json
+Loaded 2 records for evaluation.
+Initializing generator model: mock...
+Initializing judge model: mock...
+🔄 Resuming from run: prediction_en_mock_noise0.4_passage5_correct0.0_judge_20260801_160634.json
+Loaded 1 existing predictions. Continuing with the remaining 1 instances.
+Running evaluation...
+
+ 50%|█████     | 1/2 [00:00<?, ?it/s]
+100%|██████████| 2/2 [00:00<00:00, 2337.96it/s]
+
+=============================================
+             RGB EVALUATION RESULTS          
+=============================================
+Dataset:               en
+Generator:             mock
+Total Records:         2
+Passage Num:           5
+Noise Rate:            0.4
+---------------------------------------------
+Accuracy (Acc):        0.0000%
+=============================================
+Predictions saved to:  /Users/aishwaryashilpi/workspace/ragstack/eval/results/rgb/prediction_en_mock_noise0.4_passage5_correct0.0_judge_20260801_160634.json
+Summary saved to:      /Users/aishwaryashilpi/workspace/ragstack/eval/results/rgb/prediction_en_mock_noise0.4_passage5_correct0.0_judge_20260801_160634_summary.json
+✅ Run completed in 0.05 minutes.
+
+📈 SUMMARY METRICS:
+{
+    "dataset": "en",
+    "generator": "mock",
+    "passage_num": 5,
+    "noise_rate": 0.4,
+    "correct_rate": 0.0,
+    "total_records": 2,
+    "accuracy": 0.0,
+    "rejection_rate": 0.0,
+    "error_detection_rate": 0.0,
+    "error_correction_rate": 0,
+    "execution_time_minutes": 0.05
+}
+
+
+⏭️  [Run 2/3] Skipping: Model=mock, Dataset=en_int, Noise=0.2
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_int_mock_noise0.2_passage5_correct0.0_judge_20260801_160637_summary.json
+
+⏭️  [Run 3/3] Skipping: Model=mock, Dataset=en_fact, Noise=1.0
+    Reason: Summary file already exists at eval/results/rgb/prediction_en_fact_mock_noise1.0_passage5_correct0.0_judge_20260801_160639_summary.json
+
+🎉 All scheduled experiments completed!
