@@ -5,6 +5,7 @@ import json
 import math
 import random
 import argparse
+import glob
 import tqdm
 import pandas as pd
 import numpy as np
@@ -205,87 +206,149 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     
     import time
-    run_id = args.run_id if args.run_id else time.strftime("%Y%m%d_%H%M%S")
-    output_filename = f"prediction_{args.dataset}_{args.generator}_noise{args.noise_rate}_passage{args.passage_num}_correct{args.correct_rate}"
+    
+    # Check if a partial evaluation file exists to resume from
+    prefix = f"prediction_{args.dataset}_{args.generator}_noise{args.noise_rate}_passage{args.passage_num}_correct{args.correct_rate}"
     if args.use_llm_judge:
-        output_filename += "_judge"
-    output_filename += f"_{run_id}"
-    output_json_path = os.path.join(output_dir, f"{output_filename}.json")
-    output_summary_path = os.path.join(output_dir, f"{output_filename}_summary.json")
+        prefix += "_judge"
+        
+    resumed_run = False
+    existing_results = []
+    output_json_path = None
+    output_summary_path = None
     
+    if args.run_id:
+        # If run_id is specified, we ONLY look for that specific file
+        target_json = os.path.join(output_dir, f"{prefix}_{args.run_id}.json")
+        if os.path.exists(target_json):
+            json_files = [target_json]
+        else:
+            json_files = []
+    else:
+        # Otherwise, search for any matching file (excluding summaries)
+        pattern = os.path.join(output_dir, f"{prefix}_*.json")
+        json_files = [f for f in glob.glob(pattern) if not f.endswith("_summary.json")]
+        
+    if json_files:
+        # Get the most recently modified json file
+        latest_json = max(json_files, key=os.path.getmtime)
+        base_name = os.path.splitext(latest_json)[0]
+        corresponding_summary = f"{base_name}_summary.json"
+        
+        if not os.path.exists(corresponding_summary):
+            # Attempt to read the existing predictions
+            try:
+                with open(latest_json, "r", encoding="utf-8") as f:
+                    for line_num, line in enumerate(f, 1):
+                        if line.strip():
+                            try:
+                                existing_results.append(json.loads(line))
+                            except json.JSONDecodeError as de:
+                                print(f"⚠️ Warning: Ignoring corrupted/incomplete prediction line {line_num}: {de}")
+                
+                num_existing = len(existing_results)
+                if 0 < num_existing < len(instances):
+                    print(f"🔄 Resuming from run: {os.path.basename(latest_json)}")
+                    print(f"Loaded {num_existing} existing predictions. Continuing with the remaining {len(instances) - num_existing} instances.")
+                    output_json_path = latest_json
+                    output_summary_path = corresponding_summary
+                    resumed_run = True
+                elif num_existing >= len(instances):
+                    print(f"✨ Found completed JSON file: {os.path.basename(latest_json)} but no summary file. Regenerating summary.")
+                    output_json_path = latest_json
+                    output_summary_path = corresponding_summary
+                    resumed_run = True
+            except Exception as e:
+                print(f"⚠️ Warning: Could not parse existing JSON file {latest_json} for resuming: {e}")
+                existing_results = []
+                
+    if not resumed_run:
+        # Create a new file with timestamp
+        run_id = args.run_id if args.run_id else time.strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{prefix}_{run_id}"
+        output_json_path = os.path.join(output_dir, f"{output_filename}.json")
+        output_summary_path = os.path.join(output_dir, f"{output_filename}_summary.json")
+        
     print(f"Running evaluation...")
-    results = []
+    results = existing_results
+    start_idx = len(results)
     
-    for idx, instance in enumerate(tqdm.tqdm(instances)):
-        # Apply deterministic seed per instance for doc selection shuffling consistency
-        random.seed(2333 + instance.get("id", idx))
-        
-        if args.passage_num == 0:
-            query = instance['query']
-            ans = instance['answer']
-            docs = []
-        else:
-            query, ans, docs = process_rgb_data(
-                instance, args.noise_rate, args.passage_num, args.dataset, args.correct_rate
-            )
+    # Open the file in write mode; if resuming, we rewrite the existing valid lines to truncate any corrupted end
+    with open(output_json_path, "w", encoding="utf-8") as out_f:
+        if resumed_run and results:
+            for r in results:
+                out_f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            out_f.flush()
             
-        # Format context and run generation
-        docs_str = '\n'.join(docs) if docs else ""
-        prompt_text = RGB_INSTRUCTION_TEMPLATE.format(DOCS=docs_str, QUERY=query)
-        
-        # Combine system prompt prepended to instructions
-        full_input = f"{RGB_SYSTEM_PROMPT}\n\n{prompt_text}"
-        
-        try:
-            prediction = generator.generate(prompt=full_input, context="")
-        except Exception as e:
-            print(f"\nError generating answer for ID {instance.get('id', idx)}: {e}")
-            prediction = f"Error during generation: {e}"
+        for idx in tqdm.tqdm(range(start_idx, len(instances)), initial=start_idx, total=len(instances)):
+            instance = instances[idx]
             
-        prediction_lower = prediction.lower()
-        
-        # 1. Answer checking (accurate vs inaccurate)
-        is_insufficient = 'insufficient information' in prediction_lower or 'i can not answer' in prediction_lower
-        if is_insufficient:
-            labels = [-1]
-        else:
-            labels = check_answer(prediction, ans)
+            # Apply deterministic seed per instance for doc selection shuffling consistency
+            random.seed(2333 + instance.get("id", idx))
             
-        # 2. Factchecking checking
-        factlabel = 1 if 'factual errors' in prediction_lower else 0
-        
-        # 3. Judge-based checks
-        judge_rejection = "N/A"
-        judge_factcheck = "N/A"
-        
-        if args.use_llm_judge and judge_generator:
-            # Rejection check (only relevant if we evaluate rejection)
-            judge_rejection = run_llm_judge(
-                judge_generator, REJECTION_JUDGE_TEMPLATE, question=query, answer=prediction
-            )
-            # Factual error detection check
-            judge_factcheck = run_llm_judge(
-                judge_generator, FACTUAL_JUDGE_TEMPLATE, answer=prediction
-            )
+            if args.passage_num == 0:
+                query = instance['query']
+                ans = instance['answer']
+                docs = []
+            else:
+                query, ans, docs = process_rgb_data(
+                    instance, args.noise_rate, args.passage_num, args.dataset, args.correct_rate
+                )
+                
+            # Format context and run generation
+            docs_str = '\n'.join(docs) if docs else ""
+            prompt_text = RGB_INSTRUCTION_TEMPLATE.format(DOCS=docs_str, QUERY=query)
             
-        res_instance = {
-            'id': instance.get('id', idx),
-            'query': query,
-            'ans': ans,
-            'prediction': prediction,
-            'docs': docs,
-            'noise_rate': args.noise_rate,
-            'labels': labels,
-            'factlabel': factlabel,
-            'judge_rejection': judge_rejection,
-            'judge_factcheck': judge_factcheck
-        }
-        results.append(res_instance)
-        
-    # Write detailed predictions
-    with open(output_json_path, "w", encoding="utf-8") as f:
-        for r in results:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+            # Combine system prompt prepended to instructions
+            full_input = f"{RGB_SYSTEM_PROMPT}\n\n{prompt_text}"
+            
+            try:
+                prediction = generator.generate(prompt=full_input, context="")
+            except Exception as e:
+                print(f"\nError generating answer for ID {instance.get('id', idx)}: {e}")
+                prediction = f"Error during generation: {e}"
+                
+            prediction_lower = prediction.lower()
+            
+            # 1. Answer checking (accurate vs inaccurate)
+            is_insufficient = 'insufficient information' in prediction_lower or 'i can not answer' in prediction_lower
+            if is_insufficient:
+                labels = [-1]
+            else:
+                labels = check_answer(prediction, ans)
+                
+            # 2. Factchecking checking
+            factlabel = 1 if 'factual errors' in prediction_lower else 0
+            
+            # 3. Judge-based checks
+            judge_rejection = "N/A"
+            judge_factcheck = "N/A"
+            
+            if args.use_llm_judge and judge_generator:
+                # Rejection check (only relevant if we evaluate rejection)
+                judge_rejection = run_llm_judge(
+                    judge_generator, REJECTION_JUDGE_TEMPLATE, question=query, answer=prediction
+                )
+                # Factual error detection check
+                judge_factcheck = run_llm_judge(
+                    judge_generator, FACTUAL_JUDGE_TEMPLATE, answer=prediction
+                )
+                
+            res_instance = {
+                'id': instance.get('id', idx),
+                'query': query,
+                'ans': ans,
+                'prediction': prediction,
+                'docs': docs,
+                'noise_rate': args.noise_rate,
+                'labels': labels,
+                'factlabel': factlabel,
+                'judge_rejection': judge_rejection,
+                'judge_factcheck': judge_factcheck
+            }
+            results.append(res_instance)
+            out_f.write(json.dumps(res_instance, ensure_ascii=False) + "\n")
+            out_f.flush()
             
     # Calculate metrics
     total = len(results)

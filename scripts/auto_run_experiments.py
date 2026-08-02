@@ -9,21 +9,51 @@ import argparse
 class TeeLogger:
     """
     Custom logger that redirects stdout to both the console and a file.
+    Robust to OSError when Google Drive disconnects.
     """
     def __init__(self, filepath):
         self.terminal = sys.stdout
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        # Open in append mode so logs are preserved across disconnects/retries
-        self.log = open(filepath, "a", encoding="utf-8")
+        self.filepath = filepath
+        self.log = None
+        self.last_retry_time = 0
+        self._open_log()
         
+    def _open_log(self):
+        now = time.time()
+        if now - self.last_retry_time < 10:
+            return
+        self.last_retry_time = now
+        try:
+            os.makedirs(os.path.dirname(self.filepath), exist_ok=True)
+            self.log = open(self.filepath, "a", encoding="utf-8")
+        except Exception as e:
+            self.terminal.write(f"\n⚠️ TeeLogger: Failed to open/create log file at {self.filepath}: {e}\n")
+            self.log = None
+
     def write(self, message):
         self.terminal.write(message)
-        self.log.write(message)
-        self.log.flush()
+        if self.log is None:
+            self._open_log()
+        if self.log is not None:
+            try:
+                self.log.write(message)
+                self.log.flush()
+            except Exception as e:
+                self.terminal.write(f"\n⚠️ TeeLogger Error writing log: {e}\n")
+                try:
+                    self.log.close()
+                except Exception:
+                    pass
+                self.log = None
         
     def flush(self):
         self.terminal.flush()
-        self.log.flush()
+        if self.log is not None:
+            try:
+                self.log.flush()
+            except Exception as e:
+                self.terminal.write(f"\n⚠️ TeeLogger Error flushing log: {e}\n")
+                self.log = None
 
 def check_and_pull_model(model_name):
     """
