@@ -189,8 +189,12 @@ def _compute_scores(parsed_llm_response: dict, chunk_sentence_map: dict[str, str
     """Compute all four TRACe scores from GPT-4-style span annotations using length-ratio formulas."""
     total_tokens_in_all_chunks = sum(_token_len(s) for s in chunk_sentence_map.values())
 
-    all_relevant_sentence_keys = set(parsed_llm_response.get("all_relevant_sentence_keys", []))
-    all_utilized_sentence_keys = set(parsed_llm_response.get("all_utilized_sentence_keys", []))
+    # `.get(key, default)` only falls back to `default` when the key is *missing* — a judge
+    # response with the key present but explicitly `null` (e.g. "all_relevant_sentence_keys":
+    # null, plausible LLM output when it judges nothing relevant) still returns None here, so
+    # guard explicitly with `or` rather than relying on the .get() default.
+    all_relevant_sentence_keys = set(parsed_llm_response.get("all_relevant_sentence_keys") or [])
+    all_utilized_sentence_keys = set(parsed_llm_response.get("all_utilized_sentence_keys") or [])
 
     total_tokens_in_relevant_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in all_relevant_sentence_keys if k in chunk_sentence_map)
     total_tokens_in_utilized_sentences_across_chunks = sum(_token_len(chunk_sentence_map[k]) for k in all_utilized_sentence_keys if k in chunk_sentence_map)
@@ -203,17 +207,21 @@ def _compute_scores(parsed_llm_response: dict, chunk_sentence_map: dict[str, str
     # Completeness: fraction of relevant context (by token length) that was actually utilized.
     completeness = overlap_len / total_tokens_in_relevant_sentences_across_chunks if total_tokens_in_relevant_sentences_across_chunks > 0 else 0.0
 
-    support_info = parsed_llm_response.get("sentence_support_information", [])
-    # Adherence: True only if every response sentence is fully supported by the context (no hallucinations).
-    adherence = all(s.get("fully_supported", False) for s in support_info) if support_info else False
+    support_info = parsed_llm_response.get("sentence_support_information") or []
+    # Adherence: True only if every response sentence is fully supported by the context (no
+    # hallucinations). Guard each item with isinstance — a malformed judge response could put a
+    # non-dict (e.g. a bare string) in this list, which would otherwise crash on `.get`.
+    adherence = all(
+        s.get("fully_supported", False) if isinstance(s, dict) else False for s in support_info
+    ) if support_info else False
 
     return TRACeScores(
         adherence=adherence,
         relevance=relevance,
         utilization=utilization,
         completeness=completeness,
-        adherence_explanation=parsed_llm_response.get("overall_supported_explanation", ""),
-        relevance_explanation=parsed_llm_response.get("relevance_explanation", ""),
+        adherence_explanation=parsed_llm_response.get("overall_supported_explanation") or "",
+        relevance_explanation=parsed_llm_response.get("relevance_explanation") or "",
         parsed_llm_response=parsed_llm_response,
     )
 
@@ -246,6 +254,12 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
     llm_response = llm.invoke(prompt)
     try:
         parsed_llm_response = parser.parse(_strip_trailing_commas(llm_response.content))
+        # JsonOutputParser.parse() only raises OutputParserException on invalid JSON *syntax* —
+        # a judge response of e.g. "null" or "[]" is valid JSON but not the required object, and
+        # parses silently to a non-dict. Treat that the same as a parse failure instead of
+        # crashing in _compute_scores (hit at N=1500, sample 844: a bare "null" judge response).
+        if not isinstance(parsed_llm_response, dict):
+            raise OutputParserException(f"Parsed output is not a JSON object: {parsed_llm_response!r}")
         return _compute_scores(parsed_llm_response, chunk_sentence_map)
     except OutputParserException:
         pass
@@ -259,6 +273,8 @@ def _evaluate_once(llm, question: str, chunks: list[Document], response: str) ->
     llm_response2 = llm.invoke(retry_messages)
     try:
         parsed_llm_response = parser.parse(_strip_trailing_commas(llm_response2.content))
+        if not isinstance(parsed_llm_response, dict):
+            raise OutputParserException(f"Parsed output is not a JSON object: {parsed_llm_response!r}")
         return _compute_scores(parsed_llm_response, chunk_sentence_map)
     except OutputParserException as e:
         return TRACeScores(

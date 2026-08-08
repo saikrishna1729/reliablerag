@@ -3,12 +3,13 @@ from collections.abc import Callable
 
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_core.language_models import BaseChatModel
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage
 from langchain_core.runnables import Runnable, RunnableConfig
 from langchain_chroma import Chroma
 from langchain_text_splitters import TextSplitter
 
-from reliablerag.chain import build_rag_chain, TimingCallbackHandler
+from reliablerag.chain import build_generation_chain, TimingCallbackHandler
 from reliablerag.evaluation import evaluate
 from reliablerag.retriever import get_or_build_vector_store
 
@@ -17,7 +18,7 @@ def run_rag_experiment(
     samples: list,
     retriever_factory: Callable[[Chroma, list[Document]], Runnable],
     embeddings: Embeddings,
-    generator_llm: BaseChatModel,
+    generator_llm: Runnable[LanguageModelInput, AIMessage],
     splitter: TextSplitter,
     persist_dir: str,
     collection_tag: str,
@@ -58,13 +59,17 @@ def run_rag_experiment(
               f"({'cache hit' if cached else f'{len(chunks)} chunks embedded'})")
 
         retriever = retriever_factory(vector_store, chunks)
+        timing_cb = RunnableConfig(callbacks=[TimingCallbackHandler()])
 
         t0 = time.perf_counter()
-        retrieved_chunks = retriever.invoke(question)
+        retrieved_chunks = retriever.invoke(question, config=timing_cb)
         print(f"[timing] {retrieve_label} : {time.perf_counter() - t0:.3f}s")
 
-        rag_chain    = build_rag_chain(retriever, llm=generator_llm, prompt_template=prompt_template) if prompt_template else build_rag_chain(retriever, llm=generator_llm)
-        our_response = rag_chain.invoke(question, config=RunnableConfig(callbacks=[TimingCallbackHandler()]))
+        # Reuse the chunks we just retrieved for generation. build_generation_chain has no
+        # retriever, so HyDE + retrieval run exactly once per sample (build_rag_chain would
+        # re-retrieve internally, doubling the HyDE call and the retrieval work).
+        gen_chain    = build_generation_chain(llm=generator_llm, prompt_template=prompt_template) if prompt_template else build_generation_chain(llm=generator_llm)
+        our_response = gen_chain.invoke({"context": retrieved_chunks, "question": question}, config=timing_cb)
 
         print(f"  our: {our_response}")
         print(f"  ref: {sample['response']}")
@@ -89,7 +94,7 @@ def run_rag_experiment(
 
 def evaluate_results(
     results: list[dict],
-    judge_llm: BaseChatModel,
+    judge_llm: Runnable[LanguageModelInput, AIMessage],
     n_runs: int = 3,
 ) -> dict[str, float]:
     """Run TRACe evaluation over results in-place and return aggregate metrics.
@@ -113,8 +118,8 @@ def evaluate_results(
 
         status = "PASS" if scores.adherence else "FAIL"
         print(f"[{i+1}/{len(results)}] [{status}] {r['question'][:70]}...")
-        print(f"  Adherence   : {status}  — {scores.adherence_explanation[:90]}")
-        print(f"  Relevance   : {scores.relevance:.3f} — {scores.relevance_explanation[:90]}")
+        print(f"  Adherence   : {status}  — {scores.adherence_explanation}")
+        print(f"  Relevance   : {scores.relevance:.3f} — {scores.relevance_explanation}")
         print(f"  Utilization : {scores.utilization:.3f}")
         print(f"  Completeness: {scores.completeness:.3f}")
         print()

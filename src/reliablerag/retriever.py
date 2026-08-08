@@ -1,11 +1,9 @@
-import os
-
 from langchain_chroma import Chroma
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import HumanMessage
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.runnables import Runnable, RunnableLambda
 from langchain_core.vectorstores import VectorStoreRetriever
@@ -57,24 +55,22 @@ def get_or_build_vector_store(
     """Load an existing persisted collection or build and persist a new one.
 
     Returns (vector_store, cache_hit) so callers can log whether we skipped embedding.
-    The collection is considered cached if its subdirectory already exists on disk.
+
+    Chroma 1.x stores collections inside chroma.sqlite3 + UUID-named index dirs, NOT a directory
+    named after the collection — so we detect a cache hit by loading the collection and checking
+    whether it already holds vectors, rather than by testing for a directory on disk. Loading a
+    non-existent collection yields an empty one (count 0), which we then populate; this also avoids
+    re-adding documents to an already-built collection (which duplicated chunks previously).
     """
-    collection_dir = os.path.join(persist_directory, collection_name)
-    if os.path.isdir(collection_dir):
-        vs = load_vector_store(
-            embeddings,
-            persist_directory=persist_directory,
-            collection_name=collection_name,
-            collection_metadata=collection_metadata,
-        )
-        return vs, True
-    vs = build_vector_store(
-        documents,
+    vs = load_vector_store(
         embeddings,
         persist_directory=persist_directory,
         collection_name=collection_name,
         collection_metadata=collection_metadata,
     )
+    if vs._collection.count() > 0:
+        return vs, True
+    vs.add_documents(documents)
     return vs, False
 
 
@@ -169,6 +165,37 @@ def get_hybrid_reranked_retriever(
     return RunnableLambda(_retrieve_and_rerank)
 
 
+def get_wide_hybrid_reranked_retriever(
+    vector_store: Chroma,
+    documents: list[Document],
+    reranker: CrossEncoder,
+    fetch_k: int = 100,
+    top_n: int = 20,
+) -> Runnable:
+    """Dense and BM25 each independently fetch fetch_k candidates (no RRF fusion beforehand),
+    unioned and deduped, then a cross-encoder reranks the union down to top_n.
+
+    Diagnosed against 56 CUAD date-extraction questions: with fetch_k=20 (the RRF-fused
+    get_hybrid_reranked_retriever's effective candidate depth), the correct chunk landed in
+    either retriever's own top-20 for only 39% of questions, capping recall regardless of the
+    fusion/rerank step. Widening each retriever's independent fetch to top-100 got the correct
+    chunk into the candidate pool 84% of the time, and cross-encoder reranking down to top_n=20
+    then recovered 77% overall (vs 30% for the current top_k=20 hybrid RRF retriever) — RRF's
+    rank-fusion math was truncating away single-source-only hits before the reranker ever saw
+    them, so the union is taken directly instead of pre-fusing via RRF.
+    """
+    dense = vector_store.as_retriever(search_kwargs={"k": fetch_k})
+    bm25 = BM25Retriever.from_documents(documents, k=fetch_k)
+
+    def _retrieve_and_rerank(query: str) -> list[Document]:
+        seen: dict[str, Document] = {}
+        for doc in dense.invoke(query) + bm25.invoke(query):
+            seen[doc.page_content] = doc
+        return rerank_documents(reranker, query, list(seen.values()), top_n=top_n)
+
+    return RunnableLambda(_retrieve_and_rerank)
+
+
 _HYDE_PROMPT = (
     "You are a contract analyst. Write a short hypothetical contract clause (2-4 sentences) "
     "that directly answers the following question. Write only the clause text, no preamble.\n\n"
@@ -179,7 +206,7 @@ _HYDE_PROMPT = (
 def get_hyde_retriever(
     vector_store: Chroma,
     embeddings: Embeddings,
-    llm: BaseChatModel,
+    llm: Runnable[LanguageModelInput, AIMessage],
     top_k: int = 20,
 ) -> Runnable:
     """HyDE retriever: generates a hypothetical answer clause, embeds it, then retrieves by vector.

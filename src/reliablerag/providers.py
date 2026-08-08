@@ -12,6 +12,12 @@ _PROVIDERS: dict[str, dict[str, tuple[str, str, str]]] = {
         "embeddings": ("langchain_huggingface", "HuggingFaceEmbeddings", "model_name"),
         "llm":        ("langchain_huggingface", "ChatHuggingFace",        "model"),
     },
+    # OpenAI-compatible endpoints (real OpenAI, Groq, Together, vLLM, ...).
+    # Pass base_url + api_key as kwargs to create_llm to target a specific host.
+    "openai": {
+        "embeddings": ("langchain_openai", "OpenAIEmbeddings", "model"),
+        "llm":        ("langchain_openai", "ChatOpenAI",        "model"),
+    },
 }
 
 
