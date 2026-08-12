@@ -1,1 +1,6 @@
 .venv*/
+delucion_dataset/vector_stores/
+.env
+__pycache__/
+*.pyc
+.DS_Store
